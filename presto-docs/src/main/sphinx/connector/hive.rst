@@ -48,7 +48,7 @@ Key Concepts
 ------------
 - Stores metadata about tables, columns, partitions, and storage locations
 - Enables schema-on-read functionality
-- Supports multiple metastore backends (MySQL, PostgreSQL, AWS Glue, etc.)
+- Supports multiple metastore backends (MySQL, PostgreSQL, AWS Glue)
 
 
 Additional Resources for Metastore Configuration
