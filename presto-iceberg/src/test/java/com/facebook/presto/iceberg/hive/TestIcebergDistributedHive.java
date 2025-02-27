@@ -14,7 +14,6 @@
 package com.facebook.presto.iceberg.hive;
 
 import com.facebook.presto.hive.metastore.ExtendedHiveMetastore;
-import com.facebook.presto.hive.metastore.file.FileHiveMetastore;
 import com.facebook.presto.iceberg.IcebergDistributedTestBase;
 import com.facebook.presto.iceberg.IcebergHiveTableOperationsConfig;
 import com.facebook.presto.iceberg.IcebergUtil;
@@ -82,8 +81,8 @@ public class TestIcebergDistributedHive
 
     protected ExtendedHiveMetastore getFileHiveMetastore()
     {
-        FileHiveMetastore fileHiveMetastore = new FileHiveMetastore(getHdfsEnvironment(),
-                getCatalogDirectory().getPath(),
+        IcebergFileHiveMetastore fileHiveMetastore = new IcebergFileHiveMetastore(getHdfsEnvironment(),
+                getCatalogDirectory().toString(),
                 "test");
         return memoizeMetastore(fileHiveMetastore, false, 1000, 0);
     }

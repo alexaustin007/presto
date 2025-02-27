@@ -21,7 +21,6 @@ import com.facebook.presto.hive.HiveHdfsConfiguration;
 import com.facebook.presto.hive.MetastoreClientConfig;
 import com.facebook.presto.hive.authentication.NoHdfsAuthentication;
 import com.facebook.presto.hive.metastore.ExtendedHiveMetastore;
-import com.facebook.presto.hive.metastore.file.FileHiveMetastore;
 import com.facebook.presto.iceberg.IcebergConfig;
 import com.facebook.presto.iceberg.IcebergDistributedSmokeTestBase;
 import com.facebook.presto.iceberg.IcebergHiveTableOperationsConfig;
@@ -68,8 +67,8 @@ public class TestIcebergSmokeHive
 
     protected ExtendedHiveMetastore getFileHiveMetastore()
     {
-        FileHiveMetastore fileHiveMetastore = new FileHiveMetastore(getHdfsEnvironment(),
-                getCatalogDirectory().toFile().getPath(),
+        IcebergFileHiveMetastore fileHiveMetastore = new IcebergFileHiveMetastore(getHdfsEnvironment(),
+                getCatalogDirectory().toString(),
                 "test");
         return memoizeMetastore(fileHiveMetastore, false, 1000, 0);
     }

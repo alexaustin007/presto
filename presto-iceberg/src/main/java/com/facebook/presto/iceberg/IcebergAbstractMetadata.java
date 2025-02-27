@@ -31,6 +31,7 @@ import com.facebook.presto.iceberg.changelog.ChangelogUtil;
 import com.facebook.presto.iceberg.statistics.StatisticsFileCache;
 import com.facebook.presto.spi.ColumnHandle;
 import com.facebook.presto.spi.ColumnMetadata;
+import com.facebook.presto.spi.ConnectorDeleteTableHandle;
 import com.facebook.presto.spi.ConnectorInsertTableHandle;
 import com.facebook.presto.spi.ConnectorNewTableLayout;
 import com.facebook.presto.spi.ConnectorOutputTableHandle;
@@ -122,6 +123,7 @@ import static com.facebook.presto.hive.MetadataUtils.getCombinedRemainingPredica
 import static com.facebook.presto.hive.MetadataUtils.getDiscretePredicates;
 import static com.facebook.presto.hive.MetadataUtils.getPredicate;
 import static com.facebook.presto.hive.MetadataUtils.getSubfieldPredicate;
+import static com.facebook.presto.hive.metastore.MetastoreUtil.TABLE_COMMENT;
 import static com.facebook.presto.iceberg.ExpressionConverter.toIcebergExpression;
 import static com.facebook.presto.iceberg.IcebergColumnHandle.DATA_SEQUENCE_NUMBER_COLUMN_HANDLE;
 import static com.facebook.presto.iceberg.IcebergColumnHandle.DATA_SEQUENCE_NUMBER_COLUMN_METADATA;
@@ -145,6 +147,9 @@ import static com.facebook.presto.iceberg.IcebergTableProperties.METADATA_PREVIO
 import static com.facebook.presto.iceberg.IcebergTableProperties.METRICS_MAX_INFERRED_COLUMN;
 import static com.facebook.presto.iceberg.IcebergTableProperties.PARTITIONING_PROPERTY;
 import static com.facebook.presto.iceberg.IcebergTableProperties.SORTED_BY_PROPERTY;
+import static com.facebook.presto.iceberg.IcebergTableProperties.getCommitRetries;
+import static com.facebook.presto.iceberg.IcebergTableProperties.getFormatVersion;
+import static com.facebook.presto.iceberg.IcebergTableProperties.getWriteDataLocation;
 import static com.facebook.presto.iceberg.IcebergTableType.CHANGELOG;
 import static com.facebook.presto.iceberg.IcebergTableType.DATA;
 import static com.facebook.presto.iceberg.IcebergTableType.EQUALITY_DELETES;
@@ -152,14 +157,20 @@ import static com.facebook.presto.iceberg.IcebergUtil.MIN_FORMAT_VERSION_FOR_DEL
 import static com.facebook.presto.iceberg.IcebergUtil.getColumns;
 import static com.facebook.presto.iceberg.IcebergUtil.getDeleteMode;
 import static com.facebook.presto.iceberg.IcebergUtil.getFileFormat;
+import static com.facebook.presto.iceberg.IcebergUtil.getMetadataPreviousVersionsMax;
+import static com.facebook.presto.iceberg.IcebergUtil.getMetricsMaxInferredColumn;
 import static com.facebook.presto.iceberg.IcebergUtil.getPartitionFields;
 import static com.facebook.presto.iceberg.IcebergUtil.getPartitionKeyColumnHandles;
 import static com.facebook.presto.iceberg.IcebergUtil.getPartitionSpecsIncludingValidData;
 import static com.facebook.presto.iceberg.IcebergUtil.getPartitions;
 import static com.facebook.presto.iceberg.IcebergUtil.getSnapshotIdTimeOperator;
 import static com.facebook.presto.iceberg.IcebergUtil.getSortFields;
+import static com.facebook.presto.iceberg.IcebergUtil.getSplitSize;
 import static com.facebook.presto.iceberg.IcebergUtil.getTableComment;
+import static com.facebook.presto.iceberg.IcebergUtil.getUpdateMode;
 import static com.facebook.presto.iceberg.IcebergUtil.getViewComment;
+import static com.facebook.presto.iceberg.IcebergUtil.isMetadataDeleteAfterCommit;
+import static com.facebook.presto.iceberg.IcebergUtil.parseFormatVersion;
 import static com.facebook.presto.iceberg.IcebergUtil.resolveSnapshotIdByName;
 import static com.facebook.presto.iceberg.IcebergUtil.toHiveColumns;
 import static com.facebook.presto.iceberg.IcebergUtil.tryGetLocation;
@@ -187,6 +198,7 @@ import static com.facebook.presto.iceberg.util.StatisticsUtil.calculateStatistic
 import static com.facebook.presto.spi.StandardErrorCode.NOT_SUPPORTED;
 import static com.facebook.presto.spi.StandardWarningCode.SORT_COLUMN_TRANSFORM_NOT_SUPPORTED_WARNING;
 import static com.facebook.presto.spi.statistics.TableStatisticType.ROW_COUNT;
+import static com.google.common.base.Strings.isNullOrEmpty;
 import static com.google.common.base.Verify.verify;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.ImmutableMap.toImmutableMap;
@@ -199,9 +211,17 @@ import static org.apache.iceberg.RowLevelOperationMode.MERGE_ON_READ;
 import static org.apache.iceberg.SnapshotSummary.DELETED_RECORDS_PROP;
 import static org.apache.iceberg.SnapshotSummary.REMOVED_EQ_DELETES_PROP;
 import static org.apache.iceberg.SnapshotSummary.REMOVED_POS_DELETES_PROP;
+import static org.apache.iceberg.TableProperties.COMMIT_NUM_RETRIES;
+import static org.apache.iceberg.TableProperties.DEFAULT_FILE_FORMAT;
 import static org.apache.iceberg.TableProperties.DELETE_ISOLATION_LEVEL;
 import static org.apache.iceberg.TableProperties.DELETE_ISOLATION_LEVEL_DEFAULT;
+import static org.apache.iceberg.TableProperties.METADATA_DELETE_AFTER_COMMIT_ENABLED;
+import static org.apache.iceberg.TableProperties.METRICS_MAX_INFERRED_COLUMN_DEFAULTS;
+import static org.apache.iceberg.TableProperties.ORC_COMPRESSION;
+import static org.apache.iceberg.TableProperties.PARQUET_COMPRESSION;
+import static org.apache.iceberg.TableProperties.SPLIT_SIZE;
 import static org.apache.iceberg.TableProperties.UPDATE_MODE;
+import static org.apache.iceberg.TableProperties.WRITE_DATA_LOCATION;
 
 public abstract class IcebergAbstractMetadata
         implements ConnectorMetadata
@@ -714,11 +734,17 @@ public abstract class IcebergAbstractMetadata
             properties.put(LOCATION_PROPERTY, icebergTable.location());
         }
 
-        properties.put(DELETE_MODE, IcebergUtil.getDeleteMode(icebergTable));
-        properties.put(UPDATE_MODE, IcebergUtil.getUpdateMode(icebergTable));
-        properties.put(METADATA_PREVIOUS_VERSIONS_MAX, IcebergUtil.getMetadataPreviousVersionsMax(icebergTable));
-        properties.put(METADATA_DELETE_AFTER_COMMIT, IcebergUtil.isMetadataDeleteAfterCommit(icebergTable));
-        properties.put(METRICS_MAX_INFERRED_COLUMN, IcebergUtil.getMetricsMaxInferredColumn(icebergTable));
+        String writeDataLocation = icebergTable.properties().get(WRITE_DATA_LOCATION);
+        if (!isNullOrEmpty(writeDataLocation)) {
+            properties.put(WRITE_DATA_LOCATION, writeDataLocation);
+        }
+
+        properties.put(DELETE_MODE, getDeleteMode(icebergTable));
+        properties.put(UPDATE_MODE, getUpdateMode(icebergTable));
+        properties.put(METADATA_PREVIOUS_VERSIONS_MAX, getMetadataPreviousVersionsMax(icebergTable));
+        properties.put(METADATA_DELETE_AFTER_COMMIT, isMetadataDeleteAfterCommit(icebergTable));
+        properties.put(METRICS_MAX_INFERRED_COLUMN, getMetricsMaxInferredColumn(icebergTable));
+        properties.put(SPLIT_SIZE, getSplitSize(icebergTable));
 
         SortOrder sortOrder = icebergTable.sortOrder();
         // TODO: Support sort column transforms (https://github.com/prestodb/presto/issues/24250)
@@ -976,7 +1002,7 @@ public abstract class IcebergAbstractMetadata
     }
 
     @Override
-    public ConnectorTableHandle beginDelete(ConnectorSession session, ConnectorTableHandle tableHandle)
+    public ConnectorDeleteTableHandle beginDelete(ConnectorSession session, ConnectorTableHandle tableHandle)
     {
         IcebergTableHandle handle = (IcebergTableHandle) tableHandle;
         Table icebergTable = getIcebergTable(session, handle.getSchemaTableName());
@@ -989,11 +1015,9 @@ public abstract class IcebergAbstractMetadata
         if (formatVersion < MIN_FORMAT_VERSION_FOR_DELETE) {
             throw new PrestoException(NOT_SUPPORTED, format("This connector only supports delete where one or more partitions are deleted entirely for table versions older than %d", MIN_FORMAT_VERSION_FOR_DELETE));
         }
-
         if (getDeleteMode(icebergTable) == RowLevelOperationMode.COPY_ON_WRITE) {
             throw new PrestoException(NOT_SUPPORTED, "This connector only supports delete where one or more partitions are deleted entirely. Configure delete_mode table property to allow row level deletions.");
         }
-
         validateTableMode(session, icebergTable);
         transaction = icebergTable.newTransaction();
 
@@ -1001,7 +1025,7 @@ public abstract class IcebergAbstractMetadata
     }
 
     @Override
-    public void finishDelete(ConnectorSession session, ConnectorTableHandle tableHandle, Collection<Slice> fragments)
+    public void finishDelete(ConnectorSession session, ConnectorDeleteTableHandle tableHandle, Collection<Slice> fragments)
     {
         IcebergTableHandle handle = (IcebergTableHandle) tableHandle;
         Table icebergTable = getIcebergTable(session, handle.getSchemaTableName());
@@ -1127,6 +1151,9 @@ public abstract class IcebergAbstractMetadata
                 case COMMIT_RETRIES:
                     updateProperties.set(TableProperties.COMMIT_NUM_RETRIES, String.valueOf(entry.getValue()));
                     break;
+                case SPLIT_SIZE:
+                    updateProperties.set(TableProperties.SPLIT_SIZE, entry.getValue().toString());
+                    break;
                 default:
                     throw new PrestoException(NOT_SUPPORTED, "Updating property " + entry.getKey() + " is not supported currently");
             }
@@ -1134,6 +1161,62 @@ public abstract class IcebergAbstractMetadata
 
         updateProperties.commit();
         transaction.commitTransaction();
+    }
+
+    protected Map<String, String> populateTableProperties(ConnectorTableMetadata tableMetadata, com.facebook.presto.iceberg.FileFormat fileFormat, ConnectorSession session)
+    {
+        ImmutableMap.Builder<String, String> propertiesBuilder = ImmutableMap.builderWithExpectedSize(16);
+
+        String writeDataLocation = getWriteDataLocation(tableMetadata.getProperties());
+        if (!isNullOrEmpty(writeDataLocation)) {
+            propertiesBuilder.put(WRITE_DATA_LOCATION, writeDataLocation);
+        }
+        else {
+            Optional<String> dataLocation = getDataLocationBasedOnWarehouseDataDir(tableMetadata.getTable());
+            dataLocation.ifPresent(location -> propertiesBuilder.put(WRITE_DATA_LOCATION, location));
+        }
+
+        Integer commitRetries = getCommitRetries(tableMetadata.getProperties());
+        propertiesBuilder.put(DEFAULT_FILE_FORMAT, fileFormat.toString());
+        propertiesBuilder.put(COMMIT_NUM_RETRIES, String.valueOf(commitRetries));
+        switch (fileFormat) {
+            case PARQUET:
+                propertiesBuilder.put(PARQUET_COMPRESSION, getCompressionCodec(session).getParquetCompressionCodec().get().toString());
+                break;
+            case ORC:
+                propertiesBuilder.put(ORC_COMPRESSION, getCompressionCodec(session).getOrcCompressionKind().name());
+                break;
+        }
+        if (tableMetadata.getComment().isPresent()) {
+            propertiesBuilder.put(TABLE_COMMENT, tableMetadata.getComment().get());
+        }
+
+        String formatVersion = getFormatVersion(tableMetadata.getProperties());
+        verify(formatVersion != null, "Format version cannot be null");
+        propertiesBuilder.put(TableProperties.FORMAT_VERSION, formatVersion);
+
+        if (parseFormatVersion(formatVersion) < MIN_FORMAT_VERSION_FOR_DELETE) {
+            propertiesBuilder.put(TableProperties.DELETE_MODE, RowLevelOperationMode.COPY_ON_WRITE.modeName());
+            propertiesBuilder.put(TableProperties.UPDATE_MODE, RowLevelOperationMode.COPY_ON_WRITE.modeName());
+        }
+        else {
+            RowLevelOperationMode deleteMode = IcebergTableProperties.getDeleteMode(tableMetadata.getProperties());
+            propertiesBuilder.put(TableProperties.DELETE_MODE, deleteMode.modeName());
+            RowLevelOperationMode updateMode = IcebergTableProperties.getUpdateMode(tableMetadata.getProperties());
+            propertiesBuilder.put(TableProperties.UPDATE_MODE, updateMode.modeName());
+        }
+
+        Integer metadataPreviousVersionsMax = IcebergTableProperties.getMetadataPreviousVersionsMax(tableMetadata.getProperties());
+        propertiesBuilder.put(TableProperties.METADATA_PREVIOUS_VERSIONS_MAX, String.valueOf(metadataPreviousVersionsMax));
+
+        Boolean metadataDeleteAfterCommit = IcebergTableProperties.isMetadataDeleteAfterCommit(tableMetadata.getProperties());
+        propertiesBuilder.put(METADATA_DELETE_AFTER_COMMIT_ENABLED, String.valueOf(metadataDeleteAfterCommit));
+
+        Integer metricsMaxInferredColumn = IcebergTableProperties.getMetricsMaxInferredColumn(tableMetadata.getProperties());
+        propertiesBuilder.put(METRICS_MAX_INFERRED_COLUMN_DEFAULTS, String.valueOf(metricsMaxInferredColumn));
+
+        propertiesBuilder.put(SPLIT_SIZE, String.valueOf(IcebergTableProperties.getTargetSplitSize(tableMetadata.getProperties())));
+        return propertiesBuilder.build();
     }
 
     /**
@@ -1260,5 +1343,10 @@ public abstract class IcebergAbstractMetadata
                 icebergTable.properties(),
                 handle.getSortOrder());
         finishWrite(session, outputTableHandle, fragments, UPDATE_AFTER);
+    }
+
+    protected Optional<String> getDataLocationBasedOnWarehouseDataDir(SchemaTableName schemaTableName)
+    {
+        return Optional.empty();
     }
 }

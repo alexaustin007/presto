@@ -131,9 +131,10 @@ public final class HiveSessionProperties
     public static final String QUICK_STATS_INLINE_BUILD_TIMEOUT = "quick_stats_inline_build_timeout";
     public static final String QUICK_STATS_BACKGROUND_BUILD_TIMEOUT = "quick_stats_background_build_timeout";
     public static final String DYNAMIC_SPLIT_SIZES_ENABLED = "dynamic_split_sizes_enabled";
-    public static final String AFFINITY_SCHEDULING_FILE_SECTION_SIZE = "affinity_scheduling_file_section_size";
     public static final String SKIP_EMPTY_FILES = "skip_empty_files";
     public static final String LEGACY_TIMESTAMP_BUCKETING = "legacy_timestamp_bucketing";
+
+    public static final String STATS_BASED_FILTER_REORDER_DISABLED = "stats_based_filter_reorder_disabled";
 
     private final List<PropertyMetadata<?>> sessionProperties;
 
@@ -639,11 +640,6 @@ public final class HiveSessionProperties
                         false,
                         value -> Duration.valueOf((String) value),
                         Duration::toString),
-                dataSizeSessionProperty(
-                        AFFINITY_SCHEDULING_FILE_SECTION_SIZE,
-                        "Size of file section for affinity scheduling",
-                        hiveClientConfig.getAffinitySchedulingFileSectionSize(),
-                        false),
                 booleanProperty(
                         SKIP_EMPTY_FILES,
                         "If it is required empty files will be skipped",
@@ -653,7 +649,12 @@ public final class HiveSessionProperties
                         LEGACY_TIMESTAMP_BUCKETING,
                         "Use legacy timestamp bucketing algorithm (which is not Hive compatible) for table bucketed by timestamp type.",
                         hiveClientConfig.isLegacyTimestampBucketing(),
-                        false));
+                        false),
+                booleanProperty(
+                        STATS_BASED_FILTER_REORDER_DISABLED,
+                        "Native Execution only. Disable stats based filter reordering.",
+                        false,
+                        true));
     }
 
     public List<PropertyMetadata<?>> getSessionProperties()
@@ -1124,11 +1125,6 @@ public final class HiveSessionProperties
     public static Duration getQuickStatsBackgroundBuildTimeout(ConnectorSession session)
     {
         return session.getProperty(QUICK_STATS_BACKGROUND_BUILD_TIMEOUT, Duration.class);
-    }
-
-    public static DataSize getAffinitySchedulingFileSectionSize(ConnectorSession session)
-    {
-        return session.getProperty(AFFINITY_SCHEDULING_FILE_SECTION_SIZE, DataSize.class);
     }
 
     public static boolean isSkipEmptyFilesEnabled(ConnectorSession session)

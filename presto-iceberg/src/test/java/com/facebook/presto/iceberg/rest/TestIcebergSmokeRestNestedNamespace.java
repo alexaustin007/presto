@@ -29,7 +29,6 @@ import com.facebook.presto.spi.ConnectorSession;
 import com.facebook.presto.spi.SchemaTableName;
 import com.facebook.presto.testing.MaterializedResult;
 import com.facebook.presto.testing.QueryRunner;
-import com.facebook.presto.tests.DistributedQueryRunner;
 import com.google.common.collect.ImmutableMap;
 import org.apache.iceberg.Table;
 import org.assertj.core.util.Files;
@@ -39,12 +38,11 @@ import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.Map;
 import java.util.Optional;
-import java.util.OptionalInt;
 
 import static com.facebook.presto.iceberg.CatalogType.REST;
-import static com.facebook.presto.iceberg.FileFormat.PARQUET;
 import static com.facebook.presto.iceberg.IcebergQueryRunner.ICEBERG_CATALOG;
 import static com.facebook.presto.iceberg.IcebergUtil.getNativeIcebergTable;
 import static com.facebook.presto.iceberg.rest.IcebergRestTestUtil.getRestServer;
@@ -53,6 +51,7 @@ import static com.google.common.collect.Iterables.getOnlyElement;
 import static com.google.common.io.MoreFiles.deleteRecursively;
 import static com.google.common.io.RecursiveDeleteOption.ALLOW_INSECURE;
 import static java.lang.String.format;
+import static java.nio.file.Files.createTempDirectory;
 import static java.util.Locale.ENGLISH;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -110,26 +109,25 @@ public class TestIcebergSmokeRestNestedNamespace
             throws Exception
     {
         Map<String, String> restConnectorProperties = restConnectorProperties(serverUri);
-        DistributedQueryRunner icebergQueryRunner = IcebergQueryRunner.createIcebergQueryRunner(
-                ImmutableMap.of(),
-                restConnectorProperties,
-                PARQUET,
-                true,
-                false,
-                OptionalInt.empty(),
-                Optional.empty(),
-                Optional.of(warehouseLocation.toPath()),
-                false,
-                Optional.of("ns1.ns2"));
+        IcebergQueryRunner icebergQueryRunner = IcebergQueryRunner.builder()
+                .setCatalogType(REST)
+                .setExtraConnectorProperties(ImmutableMap.<String, String>builder()
+                        .putAll(restConnectorProperties(serverUri))
+                        .put("iceberg.rest.nested.namespace.enabled", "true")
+                        .build())
+                .setDataDirectory(Optional.of(warehouseLocation.toPath()))
+                .setSchemaName("ns1.ns2")
+                .build();
 
         // additional catalog for testing nested namespace disabled
-        icebergQueryRunner.createCatalog(ICEBERG_NESTED_NAMESPACE_DISABLED_CATALOG, "iceberg",
+        icebergQueryRunner.addCatalog(ICEBERG_NESTED_NAMESPACE_DISABLED_CATALOG,
                 new ImmutableMap.Builder<String, String>()
                         .putAll(restConnectorProperties)
+                        .put("iceberg.catalog.type", REST.name())
                         .put("iceberg.rest.nested.namespace.enabled", "false")
                         .build());
 
-        return icebergQueryRunner;
+        return icebergQueryRunner.getQueryRunner();
     }
 
     protected IcebergNativeCatalogFactory getCatalogFactory(IcebergRestConfig restConfig)
@@ -181,8 +179,43 @@ public class TestIcebergSmokeRestNestedNamespace
                         "   metadata_delete_after_commit = false,\n" +
                         "   metadata_previous_versions_max = 100,\n" +
                         "   metrics_max_inferred_column = 100,\n" +
+                        "   \"read.split.target-size\" = 134217728,\n" +
                         "   \"write.update.mode\" = 'merge-on-read'\n" +
                         ")", schemaName, getLocation(schemaName, "orders")));
+    }
+
+    @Test
+    public void testShowCreateTableWithSpecifiedWriteDataLocation()
+            throws IOException
+    {
+        String tableName = "test_table_with_specified_write_data_location";
+        String dataWriteLocation = createTempDirectory("test1").toAbsolutePath().toString();
+        try {
+            assertUpdate(format("CREATE TABLE %s(a int, b varchar) with (\"write.data.path\" = '%s')", tableName, dataWriteLocation));
+            String schemaName = getSession().getSchema().get();
+            String location = getLocation(schemaName, tableName);
+            String createTableSql = "CREATE TABLE iceberg.\"%s\".%s (\n" +
+                    "   \"a\" integer,\n" +
+                    "   \"b\" varchar\n" +
+                    ")\n" +
+                    "WITH (\n" +
+                    "   delete_mode = 'merge-on-read',\n" +
+                    "   format = 'PARQUET',\n" +
+                    "   format_version = '2',\n" +
+                    "   location = '%s',\n" +
+                    "   metadata_delete_after_commit = false,\n" +
+                    "   metadata_previous_versions_max = 100,\n" +
+                    "   metrics_max_inferred_column = 100,\n" +
+                    "   \"read.split.target-size\" = 134217728,\n" +
+                    "   \"write.data.path\" = '%s',\n" +
+                    "   \"write.update.mode\" = 'merge-on-read'\n" +
+                    ")";
+            assertThat(computeActual("SHOW CREATE TABLE " + tableName).getOnlyValue())
+                    .isEqualTo(format(createTableSql, schemaName, tableName, location, dataWriteLocation));
+        }
+        finally {
+            assertUpdate(("DROP TABLE IF EXISTS " + tableName));
+        }
     }
 
     @Test
@@ -217,6 +250,7 @@ public class TestIcebergSmokeRestNestedNamespace
                 "   metadata_delete_after_commit = false,\n" +
                 "   metadata_previous_versions_max = 100,\n" +
                 "   metrics_max_inferred_column = 100,\n" +
+                "   \"read.split.target-size\" = 134217728,\n" +
                 "   \"write.update.mode\" = 'merge-on-read'\n" +
                 ")";
         String createTableSql = format(createTableTemplate, schemaName, "test table comment", getLocation(schemaName, "test_table_comments"));
@@ -258,6 +292,7 @@ public class TestIcebergSmokeRestNestedNamespace
                         "   metadata_previous_versions_max = 100,\n" +
                         "   metrics_max_inferred_column = 100,\n" +
                         "   partitioning = ARRAY['order_status','ship_priority','bucket(order_key, 9)'],\n" +
+                        "   \"read.split.target-size\" = 134217728,\n" +
                         "   \"write.update.mode\" = 'merge-on-read'\n" +
                         ")",
                 getSession().getCatalog().get(),
@@ -319,6 +354,7 @@ public class TestIcebergSmokeRestNestedNamespace
                         "   metadata_delete_after_commit = false,\n" +
                         "   metadata_previous_versions_max = 100,\n" +
                         "   metrics_max_inferred_column = 100,\n" +
+                        "   \"read.split.target-size\" = 134217728,\n" +
                         "   \"write.update.mode\" = '%s'\n" +
                         ")",
                 getSession().getCatalog().get(),

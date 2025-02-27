@@ -57,6 +57,7 @@
 #include "velox/connectors/tpch/TpchConnector.h"
 #include "velox/dwio/dwrf/RegisterDwrfReader.h"
 #include "velox/dwio/dwrf/RegisterDwrfWriter.h"
+#include "velox/dwio/orc/reader/OrcReader.h"
 #include "velox/dwio/parquet/RegisterParquetReader.h"
 #include "velox/dwio/parquet/RegisterParquetWriter.h"
 #include "velox/exec/OutputBufferManager.h"
@@ -241,6 +242,7 @@ void PrestoServer::run() {
       address_ = fmt::format("[{}]", address_);
     }
     nodeLocation_ = nodeConfig->nodeLocation();
+    nodePoolType_ = systemConfig->poolType();
     prestoBuiltinFunctionPrefix_ = systemConfig->prestoDefaultNamespacePrefix();
   } catch (const velox::VeloxUserError& e) {
     PRESTO_STARTUP_LOG(ERROR) << "Failed to start server due to " << e.what();
@@ -576,6 +578,7 @@ void PrestoServer::run() {
           environment_,
           nodeId_,
           nodeLocation_,
+          nodePoolType_,
           systemConfig->prestoNativeSidecar(),
           catalogNames,
           systemConfig->announcementMaxFrequencyMs(),
@@ -1391,6 +1394,7 @@ void PrestoServer::registerMemoryArbitrators() {
 void PrestoServer::registerFileReadersAndWriters() {
   velox::dwrf::registerDwrfReaderFactory();
   velox::dwrf::registerDwrfWriterFactory();
+  velox::orc::registerOrcReaderFactory();
   velox::parquet::registerParquetReaderFactory();
   velox::parquet::registerParquetWriterFactory();
 }
