@@ -51,6 +51,7 @@ public class TaskManagerConfig
     private boolean statisticsCpuTimerEnabled = true;
     private boolean perOperatorAllocationTrackingEnabled;
     private boolean taskAllocationTrackingEnabled;
+    private boolean taskUpdateSizeTrackingEnabled = true;
     private DataSize maxPartialAggregationMemoryUsage = new DataSize(16, Unit.MEGABYTE);
     private DataSize maxLocalExchangeBufferSize = new DataSize(32, Unit.MEGABYTE);
     private DataSize maxIndexMemoryUsage = new DataSize(64, Unit.MEGABYTE);
@@ -99,6 +100,19 @@ public class TaskManagerConfig
     private double highMemoryTaskKillerGCReclaimMemoryThreshold = 0.01;
     private Duration highMemoryTaskKillerFrequentFullGCDurationThreshold = new Duration(1, SECONDS);
     private double highMemoryTaskKillerHeapMemoryThreshold = 0.9;
+    private boolean enableEventLoop;
+
+    @Config("task.enable-event-loop")
+    public TaskManagerConfig setEventLoopEnabled(boolean enableEventLoop)
+    {
+        this.enableEventLoop = enableEventLoop;
+        return this;
+    }
+
+    public boolean isEventLoopEnabled()
+    {
+        return enableEventLoop;
+    }
 
     @MinDuration("1ms")
     @MaxDuration("10s")
@@ -664,6 +678,18 @@ public class TaskManagerConfig
     public TaskManagerConfig setHighMemoryTaskKillerStrategy(HighMemoryTaskKillerStrategy highMemoryTaskKillerStrategy)
     {
         this.highMemoryTaskKillerStrategy = highMemoryTaskKillerStrategy;
+        return this;
+    }
+
+    public boolean isTaskUpdateSizeTrackingEnabled()
+    {
+        return taskUpdateSizeTrackingEnabled;
+    }
+
+    @Config("task.update-size-tracking-enabled")
+    public TaskManagerConfig setTaskUpdateSizeTrackingEnabled(boolean taskUpdateSizeTrackingEnabled)
+    {
+        this.taskUpdateSizeTrackingEnabled = taskUpdateSizeTrackingEnabled;
         return this;
     }
 }

@@ -21,18 +21,15 @@ import com.facebook.presto.spi.plan.PlanNodeId;
 import com.facebook.presto.util.Mergeable;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import io.airlift.units.DataSize;
+import com.google.common.collect.ImmutableList;
 import io.airlift.units.Duration;
 
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.Immutable;
 
-import java.util.HashSet;
-import java.util.List;
 import java.util.Optional;
 
 import static com.google.common.base.Preconditions.checkArgument;
-import static io.airlift.units.DataSize.succinctBytes;
 import static io.airlift.units.Duration.succinctNanos;
 import static java.lang.Math.max;
 import static java.util.Objects.requireNonNull;
@@ -54,26 +51,26 @@ public class OperatorStats
     private final long isBlockedCalls;
     private final Duration isBlockedWall;
     private final Duration isBlockedCpu;
-    private final DataSize isBlockedAllocation;
+    private final long isBlockedAllocationInBytes;
 
     private final long addInputCalls;
     private final Duration addInputWall;
     private final Duration addInputCpu;
-    private final DataSize addInputAllocation;
-    private final DataSize rawInputDataSize;
+    private final long addInputAllocationInBytes;
+    private final long rawInputDataSizeInBytes;
     private final long rawInputPositions;
-    private final DataSize inputDataSize;
+    private final long inputDataSizeInBytes;
     private final long inputPositions;
     private final double sumSquaredInputPositions;
 
     private final long getOutputCalls;
     private final Duration getOutputWall;
     private final Duration getOutputCpu;
-    private final DataSize getOutputAllocation;
-    private final DataSize outputDataSize;
+    private final long getOutputAllocationInBytes;
+    private final long outputDataSizeInBytes;
     private final long outputPositions;
 
-    private final DataSize physicalWrittenDataSize;
+    private final long physicalWrittenDataSizeInBytes;
 
     private final Duration additionalCpu;
     private final Duration blockedWall;
@@ -81,16 +78,16 @@ public class OperatorStats
     private final long finishCalls;
     private final Duration finishWall;
     private final Duration finishCpu;
-    private final DataSize finishAllocation;
+    private final long finishAllocationInBytes;
 
-    private final DataSize userMemoryReservation;
-    private final DataSize revocableMemoryReservation;
-    private final DataSize systemMemoryReservation;
-    private final DataSize peakUserMemoryReservation;
-    private final DataSize peakSystemMemoryReservation;
-    private final DataSize peakTotalMemoryReservation;
+    private final long userMemoryReservationInBytes;
+    private final long revocableMemoryReservationInBytes;
+    private final long systemMemoryReservationInBytes;
+    private final long peakUserMemoryReservationInBytes;
+    private final long peakSystemMemoryReservationInBytes;
+    private final long peakTotalMemoryReservationInBytes;
 
-    private final DataSize spilledDataSize;
+    private final long spilledDataSizeInBytes;
 
     private final Optional<BlockedReason> blockedReason;
 
@@ -122,26 +119,26 @@ public class OperatorStats
             @JsonProperty("isBlockedCalls") long isBlockedCalls,
             @JsonProperty("isBlockedWall") Duration isBlockedWall,
             @JsonProperty("isBlockedCpu") Duration isBlockedCpu,
-            @JsonProperty("isBlockedAllocation") DataSize isBlockedAllocation,
+            @JsonProperty("isBlockedAllocationInBytes") long isBlockedAllocationInBytes,
 
             @JsonProperty("addInputCalls") long addInputCalls,
             @JsonProperty("addInputWall") Duration addInputWall,
             @JsonProperty("addInputCpu") Duration addInputCpu,
-            @JsonProperty("addInputAllocation") DataSize addInputAllocation,
-            @JsonProperty("rawInputDataSize") DataSize rawInputDataSize,
+            @JsonProperty("addInputAllocationInBytes") long addInputAllocationInBytes,
+            @JsonProperty("rawInputDataSizeInBytes") long rawInputDataSizeInBytes,
             @JsonProperty("rawInputPositions") long rawInputPositions,
-            @JsonProperty("inputDataSize") DataSize inputDataSize,
+            @JsonProperty("inputDataSizeInBytes") long inputDataSizeInBytes,
             @JsonProperty("inputPositions") long inputPositions,
             @JsonProperty("sumSquaredInputPositions") double sumSquaredInputPositions,
 
             @JsonProperty("getOutputCalls") long getOutputCalls,
             @JsonProperty("getOutputWall") Duration getOutputWall,
             @JsonProperty("getOutputCpu") Duration getOutputCpu,
-            @JsonProperty("getOutputAllocation") DataSize getOutputAllocation,
-            @JsonProperty("outputDataSize") DataSize outputDataSize,
+            @JsonProperty("getOutputAllocationInBytes") long getOutputAllocationInBytes,
+            @JsonProperty("outputDataSizeInBytes") long outputDataSizeInBytes,
             @JsonProperty("outputPositions") long outputPositions,
 
-            @JsonProperty("physicalWrittenDataSize") DataSize physicalWrittenDataSize,
+            @JsonProperty("physicalWrittenDataSizeInBytes") long physicalWrittenDataSizeInBytes,
 
             @JsonProperty("additionalCpu") Duration additionalCpu,
             @JsonProperty("blockedWall") Duration blockedWall,
@@ -149,16 +146,16 @@ public class OperatorStats
             @JsonProperty("finishCalls") long finishCalls,
             @JsonProperty("finishWall") Duration finishWall,
             @JsonProperty("finishCpu") Duration finishCpu,
-            @JsonProperty("finishAllocation") DataSize finishAllocation,
+            @JsonProperty("finishAllocationInBytes") long finishAllocationInBytes,
 
-            @JsonProperty("userMemoryReservation") DataSize userMemoryReservation,
-            @JsonProperty("revocableMemoryReservation") DataSize revocableMemoryReservation,
-            @JsonProperty("systemMemoryReservation") DataSize systemMemoryReservation,
-            @JsonProperty("peakUserMemoryReservation") DataSize peakUserMemoryReservation,
-            @JsonProperty("peakSystemMemoryReservation") DataSize peakSystemMemoryReservation,
-            @JsonProperty("peakTotalMemoryReservation") DataSize peakTotalMemoryReservation,
+            @JsonProperty("userMemoryReservationInBytes") long userMemoryReservationInBytes,
+            @JsonProperty("revocableMemoryReservationInBytes") long revocableMemoryReservationInBytes,
+            @JsonProperty("systemMemoryReservationInBytes") long systemMemoryReservationInBytes,
+            @JsonProperty("peakUserMemoryReservationInBytes") long peakUserMemoryReservationInBytes,
+            @JsonProperty("peakSystemMemoryReservationInBytes") long peakSystemMemoryReservationInBytes,
+            @JsonProperty("peakTotalMemoryReservationInBytes") long peakTotalMemoryReservationInBytes,
 
-            @JsonProperty("spilledDataSize") DataSize spilledDataSize,
+            @JsonProperty("spilledDataSizeInBytes") long spilledDataSizeInBytes,
 
             @JsonProperty("blockedReason") Optional<BlockedReason> blockedReason,
 
@@ -185,15 +182,20 @@ public class OperatorStats
         this.isBlockedCalls = isBlockedCalls;
         this.isBlockedWall = requireNonNull(isBlockedWall, "isBlockedWall is null");
         this.isBlockedCpu = requireNonNull(isBlockedCpu, "isBlockedCpu is null");
-        this.isBlockedAllocation = requireNonNull(isBlockedAllocation, "isBlockedAllocation is null");
+        checkArgument(isBlockedAllocationInBytes >= 0, "isBlockedAllocationInBytes is negative");
+        this.isBlockedAllocationInBytes = isBlockedAllocationInBytes;
 
         this.addInputCalls = addInputCalls;
         this.addInputWall = requireNonNull(addInputWall, "addInputWall is null");
         this.addInputCpu = requireNonNull(addInputCpu, "addInputCpu is null");
-        this.addInputAllocation = requireNonNull(addInputAllocation, "addInputAllocation is null");
-        this.rawInputDataSize = requireNonNull(rawInputDataSize, "rawInputDataSize is null");
-        this.rawInputPositions = requireNonNull(rawInputPositions, "rawInputPositions is null");
-        this.inputDataSize = requireNonNull(inputDataSize, "inputDataSize is null");
+        checkArgument(addInputAllocationInBytes >= 0, "addInputAllocationInBytes is negative");
+        this.addInputAllocationInBytes = addInputAllocationInBytes;
+        checkArgument(rawInputDataSizeInBytes >= 0, "rawInputDataSizeInBytes is negative");
+        this.rawInputDataSizeInBytes = rawInputDataSizeInBytes;
+        checkArgument(rawInputPositions >= 0, "rawInputPositions is negative");
+        this.rawInputPositions = rawInputPositions;
+        checkArgument(inputDataSizeInBytes >= 0, "inputDataSizeInBytes is negative");
+        this.inputDataSizeInBytes = inputDataSizeInBytes;
         checkArgument(inputPositions >= 0, "inputPositions is negative");
         this.inputPositions = inputPositions;
         this.sumSquaredInputPositions = sumSquaredInputPositions;
@@ -201,31 +203,37 @@ public class OperatorStats
         this.getOutputCalls = getOutputCalls;
         this.getOutputWall = requireNonNull(getOutputWall, "getOutputWall is null");
         this.getOutputCpu = requireNonNull(getOutputCpu, "getOutputCpu is null");
-        this.getOutputAllocation = requireNonNull(getOutputAllocation, "getOutputAllocation is null");
-        this.outputDataSize = requireNonNull(outputDataSize, "outputDataSize is null");
+        checkArgument(getOutputAllocationInBytes >= 0, "getOutputAllocationInBytes is negative");
+        this.getOutputAllocationInBytes = getOutputAllocationInBytes;
+        checkArgument(outputDataSizeInBytes >= 0, "outputDataSizeInBytes is negative");
+        this.outputDataSizeInBytes = outputDataSizeInBytes;
         checkArgument(outputPositions >= 0, "outputPositions is negative");
         this.outputPositions = outputPositions;
 
-        this.physicalWrittenDataSize = requireNonNull(physicalWrittenDataSize, "writtenDataSize is null");
-
-        this.additionalCpu = requireNonNull(additionalCpu, "additionalCpu is null");
+        checkArgument(physicalWrittenDataSizeInBytes >= 0, "writtenDataSizeInBytes is negative");
+        this.physicalWrittenDataSizeInBytes = physicalWrittenDataSizeInBytes;
+        this.additionalCpu = requireNonNull(additionalCpu, "additionalCpu is negative");
         this.blockedWall = requireNonNull(blockedWall, "blockedWall is null");
 
         this.finishCalls = finishCalls;
         this.finishWall = requireNonNull(finishWall, "finishWall is null");
         this.finishCpu = requireNonNull(finishCpu, "finishCpu is null");
-        this.finishAllocation = requireNonNull(finishAllocation, "finishAllocation is null");
-
-        this.userMemoryReservation = requireNonNull(userMemoryReservation, "userMemoryReservation is null");
-        this.revocableMemoryReservation = requireNonNull(revocableMemoryReservation, "revocableMemoryReservation is null");
-        this.systemMemoryReservation = requireNonNull(systemMemoryReservation, "systemMemoryReservation is null");
-
-        this.peakUserMemoryReservation = requireNonNull(peakUserMemoryReservation, "peakUserMemoryReservation is null");
-        this.peakSystemMemoryReservation = requireNonNull(peakSystemMemoryReservation, "peakSystemMemoryReservation is null");
-        this.peakTotalMemoryReservation = requireNonNull(peakTotalMemoryReservation, "peakTotalMemoryReservation is null");
-
-        this.spilledDataSize = requireNonNull(spilledDataSize, "spilledDataSize is null");
-
+        checkArgument(finishAllocationInBytes >= 0, "finishAllocationInBytes is negative");
+        this.finishAllocationInBytes = finishAllocationInBytes;
+        checkArgument(userMemoryReservationInBytes >= 0, "userMemoryReservationInBytes is negative");
+        this.userMemoryReservationInBytes = userMemoryReservationInBytes;
+        checkArgument(revocableMemoryReservationInBytes >= 0, "revocableMemoryReservationInBytes is negative");
+        this.revocableMemoryReservationInBytes = revocableMemoryReservationInBytes;
+        checkArgument(systemMemoryReservationInBytes >= 0, "systemMemoryReservationInBytes is negative");
+        this.systemMemoryReservationInBytes = systemMemoryReservationInBytes;
+        checkArgument(peakUserMemoryReservationInBytes >= 0, "peakUserMemoryReservationInBytes is negative");
+        this.peakUserMemoryReservationInBytes = peakUserMemoryReservationInBytes;
+        checkArgument(peakSystemMemoryReservationInBytes >= 0, "peakSystemMemoryReservationInBytes is negative");
+        this.peakSystemMemoryReservationInBytes = peakSystemMemoryReservationInBytes;
+        checkArgument(peakTotalMemoryReservationInBytes >= 0, "peakTotalMemoryReservationInBytes is negative");
+        this.peakTotalMemoryReservationInBytes = peakTotalMemoryReservationInBytes;
+        checkArgument(spilledDataSizeInBytes >= 0, "spilledDataSizeInBytes is negative");
+        this.spilledDataSizeInBytes = spilledDataSizeInBytes;
         this.runtimeStats = runtimeStats;
 
         this.dynamicFilterStats = dynamicFilterStats;
@@ -254,26 +262,26 @@ public class OperatorStats
             long isBlockedCalls,
             Duration isBlockedWall,
             Duration isBlockedCpu,
-            DataSize isBlockedAllocation,
+            long isBlockedAllocationInBytes,
 
             long addInputCalls,
             Duration addInputWall,
             Duration addInputCpu,
-            DataSize addInputAllocation,
-            DataSize rawInputDataSize,
+            long addInputAllocationInBytes,
+            long rawInputDataSizeInBytes,
             long rawInputPositions,
-            DataSize inputDataSize,
+            long inputDataSizeInBytes,
             long inputPositions,
             double sumSquaredInputPositions,
 
             long getOutputCalls,
             Duration getOutputWall,
             Duration getOutputCpu,
-            DataSize getOutputAllocation,
-            DataSize outputDataSize,
+            long getOutputAllocationInBytes,
+            long outputDataSizeInBytes,
             long outputPositions,
 
-            DataSize physicalWrittenDataSize,
+            long physicalWrittenDataSizeInBytes,
 
             Duration additionalCpu,
             Duration blockedWall,
@@ -281,16 +289,16 @@ public class OperatorStats
             long finishCalls,
             Duration finishWall,
             Duration finishCpu,
-            DataSize finishAllocation,
+            long finishAllocationInBytes,
 
-            DataSize userMemoryReservation,
-            DataSize revocableMemoryReservation,
-            DataSize systemMemoryReservation,
-            DataSize peakUserMemoryReservation,
-            DataSize peakSystemMemoryReservation,
-            DataSize peakTotalMemoryReservation,
+            long userMemoryReservationInBytes,
+            long revocableMemoryReservationInBytes,
+            long systemMemoryReservationInBytes,
+            long peakUserMemoryReservationInBytes,
+            long peakSystemMemoryReservationInBytes,
+            long peakTotalMemoryReservationInBytes,
 
-            DataSize spilledDataSize,
+            long spilledDataSizeInBytes,
 
             Optional<BlockedReason> blockedReason,
 
@@ -317,15 +325,21 @@ public class OperatorStats
         this.isBlockedCalls = isBlockedCalls;
         this.isBlockedWall = requireNonNull(isBlockedWall, "isBlockedWall is null");
         this.isBlockedCpu = requireNonNull(isBlockedCpu, "isBlockedCpu is null");
-        this.isBlockedAllocation = requireNonNull(isBlockedAllocation, "isBlockedAllocation is null");
+        checkArgument(isBlockedAllocationInBytes >= 0, "isBlockedAllocation is negative");
+        this.isBlockedAllocationInBytes = isBlockedAllocationInBytes;
 
         this.addInputCalls = addInputCalls;
         this.addInputWall = requireNonNull(addInputWall, "addInputWall is null");
         this.addInputCpu = requireNonNull(addInputCpu, "addInputCpu is null");
-        this.addInputAllocation = requireNonNull(addInputAllocation, "addInputAllocation is null");
-        this.rawInputDataSize = requireNonNull(rawInputDataSize, "rawInputDataSize is null");
-        this.rawInputPositions = requireNonNull(rawInputPositions, "rawInputPositions is null");
-        this.inputDataSize = requireNonNull(inputDataSize, "inputDataSize is null");
+        checkArgument(addInputAllocationInBytes >= 0, "addInputAllocation is negative");
+        this.addInputAllocationInBytes = addInputAllocationInBytes;
+        checkArgument(rawInputDataSizeInBytes >= 0, "rawInputDataSize is negative");
+        this.rawInputDataSizeInBytes = rawInputDataSizeInBytes;
+        checkArgument(rawInputPositions >= 0, "rawInputPositions is negative");
+        this.rawInputPositions = rawInputPositions;
+
+        checkArgument(inputDataSizeInBytes >= 0, "inputDataSize is negative");
+        this.inputDataSizeInBytes = inputDataSizeInBytes;
         checkArgument(inputPositions >= 0, "inputPositions is negative");
         this.inputPositions = inputPositions;
         this.sumSquaredInputPositions = sumSquaredInputPositions;
@@ -333,30 +347,39 @@ public class OperatorStats
         this.getOutputCalls = getOutputCalls;
         this.getOutputWall = requireNonNull(getOutputWall, "getOutputWall is null");
         this.getOutputCpu = requireNonNull(getOutputCpu, "getOutputCpu is null");
-        this.getOutputAllocation = requireNonNull(getOutputAllocation, "getOutputAllocation is null");
-        this.outputDataSize = requireNonNull(outputDataSize, "outputDataSize is null");
+        checkArgument(getOutputAllocationInBytes >= 0, "getOutputAllocation is negative");
+        this.getOutputAllocationInBytes = getOutputAllocationInBytes;
+        checkArgument(outputDataSizeInBytes >= 0, "outputDataSize is negative");
+        this.outputDataSizeInBytes = outputDataSizeInBytes;
         checkArgument(outputPositions >= 0, "outputPositions is negative");
         this.outputPositions = outputPositions;
 
-        this.physicalWrittenDataSize = requireNonNull(physicalWrittenDataSize, "writtenDataSize is null");
-
+        checkArgument(physicalWrittenDataSizeInBytes >= 0, "writtenDataSize is negative");
+        this.physicalWrittenDataSizeInBytes = physicalWrittenDataSizeInBytes;
         this.additionalCpu = requireNonNull(additionalCpu, "additionalCpu is null");
         this.blockedWall = requireNonNull(blockedWall, "blockedWall is null");
 
         this.finishCalls = finishCalls;
         this.finishWall = requireNonNull(finishWall, "finishWall is null");
         this.finishCpu = requireNonNull(finishCpu, "finishCpu is null");
-        this.finishAllocation = requireNonNull(finishAllocation, "finishAllocation is null");
+        checkArgument(finishAllocationInBytes >= 0, "finishAllocation is negative");
+        this.finishAllocationInBytes = finishAllocationInBytes;
+        checkArgument(userMemoryReservationInBytes >= 0, "userMemoryReservation is negative");
+        this.userMemoryReservationInBytes = userMemoryReservationInBytes;
+        checkArgument(revocableMemoryReservationInBytes >= 0, "revocableMemoryReservation is negative");
+        this.revocableMemoryReservationInBytes = revocableMemoryReservationInBytes;
+        checkArgument(systemMemoryReservationInBytes >= 0, "systemMemoryReservation is negative");
+        this.systemMemoryReservationInBytes = systemMemoryReservationInBytes;
 
-        this.userMemoryReservation = requireNonNull(userMemoryReservation, "userMemoryReservation is null");
-        this.revocableMemoryReservation = requireNonNull(revocableMemoryReservation, "revocableMemoryReservation is null");
-        this.systemMemoryReservation = requireNonNull(systemMemoryReservation, "systemMemoryReservation is null");
+        checkArgument(peakUserMemoryReservationInBytes >= 0, "peakUserMemoryReservation is negative");
+        this.peakUserMemoryReservationInBytes = peakUserMemoryReservationInBytes;
+        checkArgument(peakSystemMemoryReservationInBytes >= 0, "peakSystemMemoryReservation is negative");
+        this.peakSystemMemoryReservationInBytes = peakSystemMemoryReservationInBytes;
+        checkArgument(peakTotalMemoryReservationInBytes >= 0, "peakTotalMemoryReservation is negative");
+        this.peakTotalMemoryReservationInBytes = peakTotalMemoryReservationInBytes;
 
-        this.peakUserMemoryReservation = requireNonNull(peakUserMemoryReservation, "peakUserMemoryReservation is null");
-        this.peakSystemMemoryReservation = requireNonNull(peakSystemMemoryReservation, "peakSystemMemoryReservation is null");
-        this.peakTotalMemoryReservation = requireNonNull(peakTotalMemoryReservation, "peakTotalMemoryReservation is null");
-
-        this.spilledDataSize = requireNonNull(spilledDataSize, "spilledDataSize is null");
+        checkArgument(spilledDataSizeInBytes >= 0, "spilledDataSize is negative");
+        this.spilledDataSizeInBytes = spilledDataSizeInBytes;
 
         this.runtimeStats = runtimeStats;
 
@@ -444,16 +467,16 @@ public class OperatorStats
 
     @JsonProperty
     @ThriftField(11)
-    public DataSize getAddInputAllocation()
+    public long getAddInputAllocationInBytes()
     {
-        return addInputAllocation;
+        return addInputAllocationInBytes;
     }
 
     @JsonProperty
     @ThriftField(12)
-    public DataSize getRawInputDataSize()
+    public long getRawInputDataSizeInBytes()
     {
-        return rawInputDataSize;
+        return rawInputDataSizeInBytes;
     }
 
     @JsonProperty
@@ -465,9 +488,9 @@ public class OperatorStats
 
     @JsonProperty
     @ThriftField(14)
-    public DataSize getInputDataSize()
+    public long getInputDataSizeInBytes()
     {
-        return inputDataSize;
+        return inputDataSizeInBytes;
     }
 
     @JsonProperty
@@ -507,16 +530,16 @@ public class OperatorStats
 
     @JsonProperty
     @ThriftField(20)
-    public DataSize getGetOutputAllocation()
+    public long getGetOutputAllocationInBytes()
     {
-        return getOutputAllocation;
+        return getOutputAllocationInBytes;
     }
 
     @JsonProperty
     @ThriftField(21)
-    public DataSize getOutputDataSize()
+    public long getOutputDataSizeInBytes()
     {
-        return outputDataSize;
+        return outputDataSizeInBytes;
     }
 
     @JsonProperty
@@ -528,9 +551,9 @@ public class OperatorStats
 
     @JsonProperty
     @ThriftField(23)
-    public DataSize getPhysicalWrittenDataSize()
+    public long getPhysicalWrittenDataSizeInBytes()
     {
-        return physicalWrittenDataSize;
+        return physicalWrittenDataSizeInBytes;
     }
 
     @JsonProperty
@@ -570,58 +593,58 @@ public class OperatorStats
 
     @JsonProperty
     @ThriftField(29)
-    public DataSize getFinishAllocation()
+    public long getFinishAllocationInBytes()
     {
-        return finishAllocation;
+        return finishAllocationInBytes;
     }
 
     @JsonProperty
     @ThriftField(30)
-    public DataSize getUserMemoryReservation()
+    public long getUserMemoryReservationInBytes()
     {
-        return userMemoryReservation;
+        return userMemoryReservationInBytes;
     }
 
     @JsonProperty
     @ThriftField(31)
-    public DataSize getRevocableMemoryReservation()
+    public long getRevocableMemoryReservationInBytes()
     {
-        return revocableMemoryReservation;
+        return revocableMemoryReservationInBytes;
     }
 
     @JsonProperty
     @ThriftField(32)
-    public DataSize getSystemMemoryReservation()
+    public long getSystemMemoryReservationInBytes()
     {
-        return systemMemoryReservation;
+        return systemMemoryReservationInBytes;
     }
 
     @JsonProperty
     @ThriftField(33)
-    public DataSize getPeakUserMemoryReservation()
+    public long getPeakUserMemoryReservationInBytes()
     {
-        return peakUserMemoryReservation;
+        return peakUserMemoryReservationInBytes;
     }
 
     @JsonProperty
     @ThriftField(34)
-    public DataSize getPeakSystemMemoryReservation()
+    public long getPeakSystemMemoryReservationInBytes()
     {
-        return peakSystemMemoryReservation;
+        return peakSystemMemoryReservationInBytes;
     }
 
     @JsonProperty
     @ThriftField(35)
-    public DataSize getPeakTotalMemoryReservation()
+    public long getPeakTotalMemoryReservationInBytes()
     {
-        return peakTotalMemoryReservation;
+        return peakTotalMemoryReservationInBytes;
     }
 
     @JsonProperty
     @ThriftField(36)
-    public DataSize getSpilledDataSize()
+    public long getSpilledDataSizeInBytes()
     {
-        return spilledDataSize;
+        return spilledDataSizeInBytes;
     }
 
     @Nullable
@@ -712,82 +735,72 @@ public class OperatorStats
 
     @JsonProperty
     @ThriftField(48)
-    public DataSize getIsBlockedAllocation()
+    public long getIsBlockedAllocationInBytes()
     {
-        return isBlockedAllocation;
+        return isBlockedAllocationInBytes;
     }
 
-    public static Optional<OperatorStats> merge(List<OperatorStats> operators)
+    public OperatorStats add(OperatorStats operatorStats)
     {
-        if (operators.isEmpty()) {
-            return Optional.empty();
-        }
+        return add(ImmutableList.of(operatorStats));
+    }
 
-        OperatorStats first = operators.stream().findFirst().get();
-        int stageId = first.getStageId();
-        int operatorId = first.getOperatorId();
-        int stageExecutionId = first.getStageExecutionId();
-        int pipelineId = first.getPipelineId();
-        PlanNodeId planNodeId = first.getPlanNodeId();
-        String operatorType = first.getOperatorType();
+    public OperatorStats add(Iterable<OperatorStats> operators)
+    {
+        long totalDrivers = this.totalDrivers;
 
-        long totalDrivers = 0;
+        long isBlockedCalls = this.isBlockedCalls;
+        long isBlockedWall = this.isBlockedWall.roundTo(NANOSECONDS);
+        long isBlockedCpu = this.isBlockedCpu.roundTo(NANOSECONDS);
+        long isBlockedAllocation = this.isBlockedAllocationInBytes;
 
-        long isBlockedCalls = 0;
-        long isBlockedWall = 0;
-        long isBlockedCpu = 0;
-        long isBlockedAllocation = 0;
+        long addInputCalls = this.addInputCalls;
+        long addInputWall = this.addInputWall.roundTo(NANOSECONDS);
+        long addInputCpu = this.addInputCpu.roundTo(NANOSECONDS);
+        long addInputAllocation = this.addInputAllocationInBytes;
+        long rawInputDataSize = this.rawInputDataSizeInBytes;
+        long rawInputPositions = this.rawInputPositions;
+        long inputDataSize = this.inputDataSizeInBytes;
+        long inputPositions = this.inputPositions;
+        double sumSquaredInputPositions = this.sumSquaredInputPositions;
 
-        long addInputCalls = 0;
-        long addInputWall = 0;
-        long addInputCpu = 0;
-        long addInputAllocation = 0;
-        long rawInputDataSize = 0;
-        long rawInputPositions = 0;
-        long inputDataSize = 0;
-        long inputPositions = 0;
+        long getOutputCalls = this.getOutputCalls;
+        long getOutputWall = this.getOutputWall.roundTo(NANOSECONDS);
+        long getOutputCpu = this.getOutputCpu.roundTo(NANOSECONDS);
+        long getOutputAllocation = this.getOutputAllocationInBytes;
+        long outputDataSize = this.outputDataSizeInBytes;
+        long outputPositions = this.outputPositions;
 
-        double sumSquaredInputPositions = 0.0;
+        long physicalWrittenDataSize = this.physicalWrittenDataSizeInBytes;
 
-        long getOutputCalls = 0;
-        long getOutputWall = 0;
-        long getOutputCpu = 0;
-        long getOutputAllocation = 0;
-        long outputDataSize = 0;
-        long outputPositions = 0;
+        long additionalCpu = this.additionalCpu.roundTo(NANOSECONDS);
+        long blockedWall = this.blockedWall.roundTo(NANOSECONDS);
 
-        long physicalWrittenDataSize = 0;
+        long finishCalls = this.finishCalls;
+        long finishWall = this.finishWall.roundTo(NANOSECONDS);
+        long finishCpu = this.finishCpu.roundTo(NANOSECONDS);
+        long finishAllocation = this.finishAllocationInBytes;
 
-        long finishCalls = 0;
-        long finishWall = 0;
-        long finishCpu = 0;
-        long finishAllocation = 0;
+        long memoryReservation = this.userMemoryReservationInBytes;
+        long revocableMemoryReservation = this.revocableMemoryReservationInBytes;
+        long systemMemoryReservation = this.systemMemoryReservationInBytes;
+        long peakUserMemory = this.peakUserMemoryReservationInBytes;
+        long peakSystemMemory = this.peakSystemMemoryReservationInBytes;
+        long peakTotalMemory = this.peakTotalMemoryReservationInBytes;
 
-        long additionalCpu = 0;
-        long blockedWall = 0;
+        long spilledDataSize = this.spilledDataSizeInBytes;
 
-        long memoryReservation = 0;
-        long revocableMemoryReservation = 0;
-        long systemMemoryReservation = 0;
+        Optional<BlockedReason> blockedReason = this.blockedReason;
 
-        long peakUserMemory = 0;
-        long peakSystemMemory = 0;
-        long peakTotalMemory = 0;
+        RuntimeStats runtimeStats = RuntimeStats.copyOf(this.runtimeStats);
+        DynamicFilterStats dynamicFilterStats = DynamicFilterStats.copyOf(this.dynamicFilterStats);
 
-        long spilledDataSize = 0;
+        long nullJoinBuildKeyCount = this.nullJoinBuildKeyCount;
+        long joinBuildKeyCount = this.joinBuildKeyCount;
+        long nullJoinProbeKeyCount = this.nullJoinProbeKeyCount;
+        long joinProbeKeyCount = this.joinProbeKeyCount;
 
-        long nullJoinBuildKeyCount = 0;
-        long joinBuildKeyCount = 0;
-        long nullJoinProbeKeyCount = 0;
-        long joinProbeKeyCount = 0;
-
-        RuntimeStats runtimeStats = new RuntimeStats();
-        DynamicFilterStats dynamicFilterStats = new DynamicFilterStats(new HashSet<>());
-
-        Optional<BlockedReason> blockedReason = Optional.empty();
-
-        Mergeable<OperatorInfo> base = null;
-
+        Mergeable<OperatorInfo> base = getMergeableInfoOrNull(info);
         for (OperatorStats operator : operators) {
             checkArgument(operator.getOperatorId() == operatorId, "Expected operatorId to be %s but was %s", operatorId, operator.getOperatorId());
 
@@ -796,54 +809,51 @@ public class OperatorStats
             isBlockedCalls += operator.getGetOutputCalls();
             isBlockedWall += operator.getGetOutputWall().roundTo(NANOSECONDS);
             isBlockedCpu += operator.getGetOutputCpu().roundTo(NANOSECONDS);
-            isBlockedAllocation += operator.getIsBlockedAllocation().toBytes();
+            isBlockedAllocation += operator.getIsBlockedAllocationInBytes();
 
             addInputCalls += operator.getAddInputCalls();
             addInputWall += operator.getAddInputWall().roundTo(NANOSECONDS);
             addInputCpu += operator.getAddInputCpu().roundTo(NANOSECONDS);
-            addInputAllocation += operator.getAddInputAllocation().toBytes();
-            rawInputDataSize += operator.getRawInputDataSize().toBytes();
+            addInputAllocation += operator.getAddInputAllocationInBytes();
+            rawInputDataSize += operator.getRawInputDataSizeInBytes();
             rawInputPositions += operator.getRawInputPositions();
-            inputDataSize += operator.getInputDataSize().toBytes();
+            inputDataSize += operator.getInputDataSizeInBytes();
             inputPositions += operator.getInputPositions();
             sumSquaredInputPositions += operator.getSumSquaredInputPositions();
 
             getOutputCalls += operator.getGetOutputCalls();
             getOutputWall += operator.getGetOutputWall().roundTo(NANOSECONDS);
             getOutputCpu += operator.getGetOutputCpu().roundTo(NANOSECONDS);
-            getOutputAllocation += operator.getGetOutputAllocation().toBytes();
-            outputDataSize += operator.getOutputDataSize().toBytes();
+            getOutputAllocation += operator.getGetOutputAllocationInBytes();
+            outputDataSize += operator.getOutputDataSizeInBytes();
             outputPositions += operator.getOutputPositions();
 
-            physicalWrittenDataSize += operator.getPhysicalWrittenDataSize().toBytes();
+            physicalWrittenDataSize += operator.getPhysicalWrittenDataSizeInBytes();
 
             finishCalls += operator.getFinishCalls();
             finishWall += operator.getFinishWall().roundTo(NANOSECONDS);
             finishCpu += operator.getFinishCpu().roundTo(NANOSECONDS);
-            finishAllocation += operator.getFinishAllocation().toBytes();
+            finishAllocation += operator.getFinishAllocationInBytes();
 
             additionalCpu += operator.getAdditionalCpu().roundTo(NANOSECONDS);
             blockedWall += operator.getBlockedWall().roundTo(NANOSECONDS);
 
-            memoryReservation += operator.getUserMemoryReservation().toBytes();
-            revocableMemoryReservation += operator.getRevocableMemoryReservation().toBytes();
-            systemMemoryReservation += operator.getSystemMemoryReservation().toBytes();
+            memoryReservation += operator.getUserMemoryReservationInBytes();
+            revocableMemoryReservation += operator.getRevocableMemoryReservationInBytes();
+            systemMemoryReservation += operator.getSystemMemoryReservationInBytes();
 
-            peakUserMemory = max(peakUserMemory, operator.getPeakUserMemoryReservation().toBytes());
-            peakSystemMemory = max(peakSystemMemory, operator.getPeakSystemMemoryReservation().toBytes());
-            peakTotalMemory = max(peakTotalMemory, operator.getPeakTotalMemoryReservation().toBytes());
+            peakUserMemory = max(peakUserMemory, operator.getPeakUserMemoryReservationInBytes());
+            peakSystemMemory = max(peakSystemMemory, operator.getPeakSystemMemoryReservationInBytes());
+            peakTotalMemory = max(peakTotalMemory, operator.getPeakTotalMemoryReservationInBytes());
 
-            spilledDataSize += operator.getSpilledDataSize().toBytes();
+            spilledDataSize += operator.getSpilledDataSizeInBytes();
 
             if (operator.getBlockedReason().isPresent()) {
                 blockedReason = operator.getBlockedReason();
             }
 
             OperatorInfo info = operator.getInfo();
-            if (base == null) {
-                base = getMergeableInfoOrNull(info);
-            }
-            else if (info != null && base.getClass() == info.getClass()) {
+            if (base != null && info != null && base.getClass() == info.getClass()) {
                 base = mergeInfo(base, info);
             }
 
@@ -856,7 +866,7 @@ public class OperatorStats
             joinProbeKeyCount += operator.getJoinProbeKeyCount();
         }
 
-        return Optional.of(new OperatorStats(
+        return new OperatorStats(
                 stageId,
                 stageExecutionId,
                 pipelineId,
@@ -869,26 +879,26 @@ public class OperatorStats
                 isBlockedCalls,
                 succinctNanos(isBlockedWall),
                 succinctNanos(isBlockedCpu),
-                succinctBytes(isBlockedAllocation),
+                isBlockedAllocation,
 
                 addInputCalls,
                 succinctNanos(addInputWall),
                 succinctNanos(addInputCpu),
-                succinctBytes((long) addInputAllocation),
-                succinctBytes((long) rawInputDataSize),
+                addInputAllocation,
+                rawInputDataSize,
                 rawInputPositions,
-                succinctBytes((long) inputDataSize),
+                inputDataSize,
                 inputPositions,
                 sumSquaredInputPositions,
 
                 getOutputCalls,
                 succinctNanos(getOutputWall),
                 succinctNanos(getOutputCpu),
-                succinctBytes((long) getOutputAllocation),
-                succinctBytes((long) outputDataSize),
+                getOutputAllocation,
+                outputDataSize,
                 outputPositions,
 
-                succinctBytes((long) physicalWrittenDataSize),
+                physicalWrittenDataSize,
 
                 succinctNanos(additionalCpu),
                 succinctNanos(blockedWall),
@@ -896,16 +906,16 @@ public class OperatorStats
                 finishCalls,
                 succinctNanos(finishWall),
                 succinctNanos(finishCpu),
-                succinctBytes(finishAllocation),
+                finishAllocation,
 
-                succinctBytes((long) memoryReservation),
-                succinctBytes((long) revocableMemoryReservation),
-                succinctBytes((long) systemMemoryReservation),
-                succinctBytes((long) peakUserMemory),
-                succinctBytes((long) peakSystemMemory),
-                succinctBytes((long) peakTotalMemory),
+                memoryReservation,
+                revocableMemoryReservation,
+                systemMemoryReservation,
+                peakUserMemory,
+                peakSystemMemory,
+                peakTotalMemory,
 
-                succinctBytes((long) spilledDataSize),
+                spilledDataSize,
 
                 blockedReason,
 
@@ -915,7 +925,7 @@ public class OperatorStats
                 nullJoinBuildKeyCount,
                 joinBuildKeyCount,
                 nullJoinProbeKeyCount,
-                joinProbeKeyCount));
+                joinProbeKeyCount);
     }
 
     @SuppressWarnings("unchecked")
@@ -951,36 +961,36 @@ public class OperatorStats
                 isBlockedCalls,
                 isBlockedWall,
                 isBlockedCpu,
-                isBlockedAllocation,
+                isBlockedAllocationInBytes,
                 addInputCalls,
                 addInputWall,
                 addInputCpu,
-                addInputAllocation,
-                rawInputDataSize,
+                addInputAllocationInBytes,
+                rawInputDataSizeInBytes,
                 rawInputPositions,
-                inputDataSize,
+                inputDataSizeInBytes,
                 inputPositions,
                 sumSquaredInputPositions,
                 getOutputCalls,
                 getOutputWall,
                 getOutputCpu,
-                getOutputAllocation,
-                outputDataSize,
+                getOutputAllocationInBytes,
+                outputDataSizeInBytes,
                 outputPositions,
-                physicalWrittenDataSize,
+                physicalWrittenDataSizeInBytes,
                 additionalCpu,
                 blockedWall,
                 finishCalls,
                 finishWall,
                 finishCpu,
-                finishAllocation,
-                userMemoryReservation,
-                revocableMemoryReservation,
-                systemMemoryReservation,
-                peakUserMemoryReservation,
-                peakSystemMemoryReservation,
-                peakTotalMemoryReservation,
-                spilledDataSize,
+                finishAllocationInBytes,
+                userMemoryReservationInBytes,
+                revocableMemoryReservationInBytes,
+                systemMemoryReservationInBytes,
+                peakUserMemoryReservationInBytes,
+                peakSystemMemoryReservationInBytes,
+                peakTotalMemoryReservationInBytes,
+                spilledDataSizeInBytes,
                 blockedReason,
                 info,
                 runtimeStats,

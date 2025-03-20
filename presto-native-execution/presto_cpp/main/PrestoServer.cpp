@@ -57,6 +57,7 @@
 #include "velox/connectors/tpch/TpchConnector.h"
 #include "velox/dwio/dwrf/RegisterDwrfReader.h"
 #include "velox/dwio/dwrf/RegisterDwrfWriter.h"
+#include "velox/dwio/orc/reader/OrcReader.h"
 #include "velox/dwio/parquet/RegisterParquetReader.h"
 #include "velox/dwio/parquet/RegisterParquetWriter.h"
 #include "velox/exec/OutputBufferManager.h"
@@ -102,7 +103,7 @@ protocol::NodeState convertNodeState(presto::NodeState nodeState) {
 }
 
 void enableChecksum() {
-  velox::exec::OutputBufferManager::getInstance().lock()->setListenerFactory(
+  velox::exec::OutputBufferManager::getInstanceRef()->setListenerFactory(
       []() {
         return std::make_unique<
             velox::serializer::presto::PrestoOutputStreamListener>();
@@ -241,6 +242,7 @@ void PrestoServer::run() {
       address_ = fmt::format("[{}]", address_);
     }
     nodeLocation_ = nodeConfig->nodeLocation();
+    nodePoolType_ = systemConfig->poolType();
     prestoBuiltinFunctionPrefix_ = systemConfig->prestoDefaultNamespacePrefix();
   } catch (const velox::VeloxUserError& e) {
     PRESTO_STARTUP_LOG(ERROR) << "Failed to start server due to " << e.what();
@@ -281,7 +283,6 @@ void PrestoServer::run() {
   registerPrestoToVeloxConnector(
       std::make_unique<SystemPrestoToVeloxConnector>("$system@system"));
 
-  velox::exec::OutputBufferManager::initialize({});
   initializeVeloxMemory();
   initializeThreadPools();
 
@@ -576,6 +577,7 @@ void PrestoServer::run() {
           environment_,
           nodeId_,
           nodeLocation_,
+          nodePoolType_,
           systemConfig->prestoNativeSidecar(),
           catalogNames,
           systemConfig->announcementMaxFrequencyMs(),
@@ -914,7 +916,20 @@ void PrestoServer::initializeVeloxMemory() {
         {std::string(SharedArbitratorConfig::kSlowCapacityGrowPct),
          systemConfig->sharedArbitratorSlowCapacityGrowPct()},
         {std::string(SharedArbitratorConfig::kCheckUsageLeak),
-         folly::to<std::string>(systemConfig->enableMemoryLeakCheck())}};
+         folly::to<std::string>(systemConfig->enableMemoryLeakCheck())},
+        {std::string(SharedArbitratorConfig::kMemoryPoolAbortCapacityLimit),
+         systemConfig->sharedArbitratorMemoryPoolAbortCapacityLimit()},
+        {std::string(SharedArbitratorConfig::kMemoryPoolMinReclaimBytes),
+         systemConfig->sharedArbitratorMemoryPoolMinReclaimBytes()},
+        {std::string(SharedArbitratorConfig::kMemoryReclaimThreadsHwMultiplier),
+         systemConfig->sharedArbitratorMemoryReclaimThreadsHwMultiplier()},
+        {std::string(
+             SharedArbitratorConfig::kGlobalArbitrationMemoryReclaimPct),
+         systemConfig->sharedArbitratorGlobalArbitrationMemoryReclaimPct()},
+        {std::string(SharedArbitratorConfig::kGlobalArbitrationAbortTimeRatio),
+         systemConfig->sharedArbitratorGlobalArbitrationAbortTimeRatio()},
+        {std::string(SharedArbitratorConfig::kGlobalArbitrationWithoutSpill),
+         systemConfig->sharedArbitratorGlobalArbitrationWithoutSpill()}};
   }
   velox::memory::initializeMemoryManager(options);
   PRESTO_STARTUP_LOG(INFO) << "Memory manager has been setup: "
@@ -1391,6 +1406,7 @@ void PrestoServer::registerMemoryArbitrators() {
 void PrestoServer::registerFileReadersAndWriters() {
   velox::dwrf::registerDwrfReaderFactory();
   velox::dwrf::registerDwrfWriterFactory();
+  velox::orc::registerOrcReaderFactory();
   velox::parquet::registerParquetReaderFactory();
   velox::parquet::registerParquetWriterFactory();
 }

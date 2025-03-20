@@ -26,6 +26,7 @@ import com.facebook.presto.spi.plan.CteProducerNode;
 import com.facebook.presto.spi.plan.EquiJoinClause;
 import com.facebook.presto.spi.plan.ExceptNode;
 import com.facebook.presto.spi.plan.FilterNode;
+import com.facebook.presto.spi.plan.IndexSourceNode;
 import com.facebook.presto.spi.plan.IntersectNode;
 import com.facebook.presto.spi.plan.JoinDistributionType;
 import com.facebook.presto.spi.plan.JoinNode;
@@ -59,7 +60,6 @@ import com.facebook.presto.sql.planner.plan.AssignUniqueId;
 import com.facebook.presto.sql.planner.plan.EnforceSingleRowNode;
 import com.facebook.presto.sql.planner.plan.ExchangeNode;
 import com.facebook.presto.sql.planner.plan.GroupIdNode;
-import com.facebook.presto.sql.planner.plan.IndexSourceNode;
 import com.facebook.presto.sql.planner.plan.LateralJoinNode;
 import com.facebook.presto.sql.planner.plan.OffsetNode;
 import com.facebook.presto.sql.planner.plan.RemoteSourceNode;
@@ -513,8 +513,13 @@ public final class PlanMatchPattern
 
     public static PlanMatchPattern exchange(ExchangeNode.Scope scope, ExchangeNode.Type type, List<Ordering> orderBy, PlanMatchPattern... sources)
     {
+        return exchange(scope, type, orderBy, ImmutableSet.of(), sources);
+    }
+
+    public static PlanMatchPattern exchange(ExchangeNode.Scope scope, ExchangeNode.Type type, List<Ordering> orderBy, Set<String> partitionedBy, PlanMatchPattern... sources)
+    {
         return node(ExchangeNode.class, sources)
-                .with(new ExchangeMatcher(scope, type, orderBy));
+                .with(new ExchangeMatcher(scope, type, orderBy, partitionedBy));
     }
 
     public static PlanMatchPattern union(PlanMatchPattern... sources)

@@ -51,6 +51,7 @@ import com.facebook.presto.cost.StatsNormalizer;
 import com.facebook.presto.cost.TaskCountEstimator;
 import com.facebook.presto.dispatcher.NoOpQueryManager;
 import com.facebook.presto.dispatcher.QueryPrerequisitesManager;
+import com.facebook.presto.eventlistener.EventListenerConfig;
 import com.facebook.presto.eventlistener.EventListenerManager;
 import com.facebook.presto.execution.AlterFunctionTask;
 import com.facebook.presto.execution.CommitTask;
@@ -353,6 +354,7 @@ public class LocalQueryRunner
     private final NodeSpillConfig nodeSpillConfig;
     private final NodeSchedulerConfig nodeSchedulerConfig;
     private final FragmentStatsProvider fragmentStatsProvider;
+    private final TaskManagerConfig taskManagerConfig;
     private boolean printPlan;
 
     private final PlanChecker distributedPlanChecker;
@@ -378,19 +380,25 @@ public class LocalQueryRunner
 
     public LocalQueryRunner(Session defaultSession, FeaturesConfig featuresConfig, FunctionsConfig functionsConfig, NodeSpillConfig nodeSpillConfig, boolean withInitialTransaction, boolean alwaysRevokeMemory)
     {
-        this(defaultSession, featuresConfig, functionsConfig, nodeSpillConfig, withInitialTransaction, alwaysRevokeMemory, 1, new ObjectMapper());
+        this(defaultSession, featuresConfig, functionsConfig, nodeSpillConfig, withInitialTransaction, alwaysRevokeMemory, new ObjectMapper());
     }
 
     public LocalQueryRunner(Session defaultSession, FeaturesConfig featuresConfig, FunctionsConfig functionsConfig, NodeSpillConfig nodeSpillConfig, boolean withInitialTransaction, boolean alwaysRevokeMemory, ObjectMapper objectMapper)
     {
-        this(defaultSession, featuresConfig, functionsConfig, nodeSpillConfig, withInitialTransaction, alwaysRevokeMemory, 1, objectMapper);
+        this(defaultSession, featuresConfig, functionsConfig, nodeSpillConfig, withInitialTransaction, alwaysRevokeMemory, 1, objectMapper, new TaskManagerConfig().setTaskConcurrency(4));
     }
 
-    private LocalQueryRunner(Session defaultSession, FeaturesConfig featuresConfig, FunctionsConfig functionsConfig, NodeSpillConfig nodeSpillConfig, boolean withInitialTransaction, boolean alwaysRevokeMemory, int nodeCountForStats, ObjectMapper objectMapper)
+    public LocalQueryRunner(Session defaultSession, FeaturesConfig featuresConfig, FunctionsConfig functionsConfig, NodeSpillConfig nodeSpillConfig, boolean withInitialTransaction, boolean alwaysRevokeMemory, ObjectMapper objectMapper, TaskManagerConfig taskManagerConfig)
+    {
+        this(defaultSession, featuresConfig, functionsConfig, nodeSpillConfig, withInitialTransaction, alwaysRevokeMemory, 1, objectMapper, taskManagerConfig);
+    }
+
+    private LocalQueryRunner(Session defaultSession, FeaturesConfig featuresConfig, FunctionsConfig functionsConfig, NodeSpillConfig nodeSpillConfig, boolean withInitialTransaction, boolean alwaysRevokeMemory, int nodeCountForStats, ObjectMapper objectMapper, TaskManagerConfig taskManagerConfig)
     {
         requireNonNull(defaultSession, "defaultSession is null");
         checkArgument(!defaultSession.getTransactionId().isPresent() || !withInitialTransaction, "Already in transaction");
 
+        this.taskManagerConfig = taskManagerConfig;
         this.nodeSpillConfig = requireNonNull(nodeSpillConfig, "nodeSpillConfig is null");
         this.alwaysRevokeMemory = alwaysRevokeMemory;
         this.notificationExecutor = newCachedThreadPool(daemonThreadsNamed("local-query-runner-executor-%s"));
@@ -535,7 +543,7 @@ public class LocalQueryRunner
                 accessControl,
                 new PasswordAuthenticatorManager(),
                 new PrestoAuthenticatorManager(new SecurityConfig()),
-                new EventListenerManager(),
+                new EventListenerManager(new EventListenerConfig()),
                 blockEncodingManager,
                 new TestingTempStorageManager(),
                 new QueryPrerequisitesManager(),
@@ -624,7 +632,7 @@ public class LocalQueryRunner
 
     public static LocalQueryRunner queryRunnerWithFakeNodeCountForStats(Session defaultSession, int nodeCount)
     {
-        return new LocalQueryRunner(defaultSession, new FeaturesConfig(), new FunctionsConfig(), new NodeSpillConfig(), false, false, nodeCount, new ObjectMapper());
+        return new LocalQueryRunner(defaultSession, new FeaturesConfig(), new FunctionsConfig(), new NodeSpillConfig(), false, false, nodeCount, new ObjectMapper(), new TaskManagerConfig().setTaskConcurrency(4));
     }
 
     @Override
@@ -884,7 +892,7 @@ public class LocalQueryRunner
                 for (Driver driver : drivers) {
                     if (alwaysRevokeMemory) {
                         driver.getDriverContext().getOperatorContexts().stream()
-                                .filter(operatorContext -> operatorContext.getOperatorStats().getRevocableMemoryReservation().getValue() > 0)
+                                .filter(operatorContext -> operatorContext.getOperatorStats().getRevocableMemoryReservationInBytes() > 0)
                                 .forEach(OperatorContext::requestMemoryRevoking);
                     }
 
@@ -987,7 +995,7 @@ public class LocalQueryRunner
                 pageFunctionCompiler,
                 joinFilterFunctionCompiler,
                 new IndexJoinLookupStats(),
-                new TaskManagerConfig().setTaskConcurrency(4),
+                taskManagerConfig,
                 new MemoryManagerConfig(),
                 new FunctionsConfig(),
                 spillerFactory,
@@ -1153,7 +1161,8 @@ public class LocalQueryRunner
                 taskCountEstimator,
                 partitioningProviderManager,
                 featuresConfig,
-                expressionOptimizerManager).getPlanningTimeOptimizers());
+                expressionOptimizerManager,
+                taskManagerConfig).getPlanningTimeOptimizers());
         return planOptimizers.build();
     }
 
