@@ -56,6 +56,7 @@ Additional Resources for Metastore Configuration
 
 * `Metastore Configuration Properties`_ 
 * `How to invalidate metastore cache?`_
+* :ref:`installation/deployment:File-Based Metastore`
 * :doc:`/connector/hive-security`
 
 Configuration
