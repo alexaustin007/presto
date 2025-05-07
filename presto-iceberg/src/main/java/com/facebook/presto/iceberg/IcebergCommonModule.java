@@ -46,12 +46,14 @@ import com.facebook.presto.iceberg.nessie.IcebergNessieConfig;
 import com.facebook.presto.iceberg.optimizer.IcebergPlanOptimizerProvider;
 import com.facebook.presto.iceberg.procedure.ExpireSnapshotsProcedure;
 import com.facebook.presto.iceberg.procedure.FastForwardBranchProcedure;
+import com.facebook.presto.iceberg.procedure.ManifestFileCacheInvalidationProcedure;
 import com.facebook.presto.iceberg.procedure.RegisterTableProcedure;
 import com.facebook.presto.iceberg.procedure.RemoveOrphanFiles;
 import com.facebook.presto.iceberg.procedure.RollbackToSnapshotProcedure;
 import com.facebook.presto.iceberg.procedure.RollbackToTimestampProcedure;
 import com.facebook.presto.iceberg.procedure.SetCurrentSnapshotProcedure;
 import com.facebook.presto.iceberg.procedure.SetTablePropertyProcedure;
+import com.facebook.presto.iceberg.procedure.StatisticsFileCacheInvalidationProcedure;
 import com.facebook.presto.iceberg.procedure.UnregisterTableProcedure;
 import com.facebook.presto.iceberg.statistics.StatisticsFileCache;
 import com.facebook.presto.iceberg.statistics.StatisticsFileCacheKey;
@@ -183,6 +185,8 @@ public class IcebergCommonModule
         procedures.addBinding().toProvider(FastForwardBranchProcedure.class).in(Scopes.SINGLETON);
         procedures.addBinding().toProvider(SetCurrentSnapshotProcedure.class).in(Scopes.SINGLETON);
         procedures.addBinding().toProvider(SetTablePropertyProcedure.class).in(Scopes.SINGLETON);
+        procedures.addBinding().toProvider(StatisticsFileCacheInvalidationProcedure.class).in(Scopes.SINGLETON);
+        procedures.addBinding().toProvider(ManifestFileCacheInvalidationProcedure.class).in(Scopes.SINGLETON);
 
         if (buildConfigObject(MetastoreClientConfig.class).isInvalidateMetastoreCacheProcedureEnabled()) {
             procedures.addBinding().toProvider(InvalidateMetastoreCacheProcedure.class).in(Scopes.SINGLETON);

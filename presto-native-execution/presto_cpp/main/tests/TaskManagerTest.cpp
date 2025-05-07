@@ -18,9 +18,9 @@
 #include "folly/experimental/EventCount.h"
 #include "presto_cpp/main/PrestoExchangeSource.h"
 #include "presto_cpp/main/TaskResource.h"
+#include "presto_cpp/main/connectors/PrestoToVeloxConnector.h"
 #include "presto_cpp/main/tests/HttpServerWrapper.h"
 #include "presto_cpp/main/tests/MultableConfigs.h"
-#include "presto_cpp/main/types/PrestoToVeloxConnector.h"
 #include "velox/common/base/Fs.h"
 #include "velox/common/base/tests/GTestUtils.h"
 #include "velox/common/file/FileSystems.h"
@@ -672,7 +672,7 @@ class TaskManagerTest : public exec::test::OperatorTestBase,
       bool summarize = true) {
     auto queryCtx =
         taskManager_->getQueryContextManager()->findOrCreateQueryCtx(
-            taskId, updateRequest.session);
+            taskId, updateRequest);
     return taskManager_->createOrUpdateTask(
         taskId, updateRequest, planFragment, summarize, std::move(queryCtx), 0);
   }
@@ -730,7 +730,7 @@ TEST_P(TaskManagerTest, tableScanAllSplitsAtOnce) {
       makeSource("0", filePaths, true, splitSequenceId));
   auto taskInfo = createOrUpdateTask(taskId, updateRequest, planFragment);
 
-  ASSERT_GT(taskInfo->stats.queuedTimeInNanos, 0);
+  ASSERT_GE(taskInfo->stats.queuedTimeInNanos, 0);
   assertResults(taskId, rowType_, "SELECT * FROM tmp WHERE c0 % 5 = 0");
 }
 

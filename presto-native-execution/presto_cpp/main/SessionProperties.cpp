@@ -264,6 +264,17 @@ SessionProperties::SessionProperties() {
       boolToString(c.debugDisableExpressionsWithLazyInputs()));
 
   addSessionProperty(
+      kDebugMemoryPoolNameRegex,
+      "Regex for filtering on memory pool name if not empty. This allows us to "
+      "only track the callsites of memory allocations for memory pools whose "
+      "name matches the specified regular expression. Empty string means no "
+      "match for all.",
+      VARCHAR(),
+      false,
+      QueryConfig::kDebugMemoryPoolNameRegex,
+      c.debugMemoryPoolNameRegex());
+
+  addSessionProperty(
       kSelectiveNimbleReaderEnabled,
       "Temporary flag to control whether selective Nimble reader should be "
       "used in this query or not.  Will be removed after the selective Nimble "
@@ -460,6 +471,16 @@ SessionProperties::SessionProperties() {
       false,
       QueryConfig::kTableScanScaleUpMemoryUsageRatio,
       std::to_string(c.tableScanScaleUpMemoryUsageRatio()));
+
+  addSessionProperty(
+      kStreamingAggregationMinOutputBatchRows,
+      "In streaming aggregation, wait until we have enough number of output rows"
+      "to produce a batch of size specified by this. If set to 0, then"
+      "Operator::outputBatchRows will be used as the min output batch rows.",
+      INTEGER(),
+      false,
+      QueryConfig::kStreamingAggregationMinOutputBatchRows,
+      std::to_string(c.streamingAggregationMinOutputBatchRows()));
 }
 
 const std::unordered_map<std::string, std::shared_ptr<SessionProperty>>&

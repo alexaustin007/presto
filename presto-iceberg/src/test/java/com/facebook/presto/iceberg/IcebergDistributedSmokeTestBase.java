@@ -24,11 +24,17 @@ import com.facebook.presto.metadata.CatalogManager;
 import com.facebook.presto.spi.ConnectorId;
 import com.facebook.presto.spi.ConnectorSession;
 import com.facebook.presto.spi.SchemaTableName;
+import com.facebook.presto.sql.parser.SqlParser;
+import com.facebook.presto.sql.tree.AstVisitor;
+import com.facebook.presto.sql.tree.ColumnDefinition;
+import com.facebook.presto.sql.tree.CreateTable;
+import com.facebook.presto.sql.tree.Identifier;
 import com.facebook.presto.testing.MaterializedResult;
 import com.facebook.presto.testing.QueryRunner;
 import com.facebook.presto.testing.assertions.Assert;
 import com.facebook.presto.tests.AbstractTestIntegrationSmokeTest;
 import com.facebook.presto.tests.DistributedQueryRunner;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -39,10 +45,11 @@ import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.BiConsumer;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import static com.facebook.presto.SystemSessionProperties.LEGACY_TIMESTAMP;
 import static com.facebook.presto.common.type.TimeZoneKey.UTC_KEY;
@@ -72,7 +79,6 @@ import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.joining;
 import static java.util.stream.IntStream.range;
 import static org.apache.iceberg.util.LocationUtil.stripTrailingSlash;
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
@@ -82,8 +88,6 @@ public abstract class IcebergDistributedSmokeTestBase
         extends AbstractTestIntegrationSmokeTest
 {
     private final CatalogType catalogType;
-
-    private static final Pattern WITH_CLAUSE_EXTRACTER = Pattern.compile(".*(WITH\\s*\\([^)]*\\))\\s*$", Pattern.DOTALL);
 
     protected IcebergDistributedSmokeTestBase(CatalogType catalogType)
     {
@@ -148,29 +152,20 @@ public abstract class IcebergDistributedSmokeTestBase
     public void testShowCreateTable()
     {
         String schemaName = getSession().getSchema().get();
-        assertThat(computeActual("SHOW CREATE TABLE orders").getOnlyValue())
-                .isEqualTo(format("CREATE TABLE iceberg.%s.orders (\n" +
-                        "   \"orderkey\" bigint,\n" +
-                        "   \"custkey\" bigint,\n" +
-                        "   \"orderstatus\" varchar,\n" +
-                        "   \"totalprice\" double,\n" +
-                        "   \"orderdate\" date,\n" +
-                        "   \"orderpriority\" varchar,\n" +
-                        "   \"clerk\" varchar,\n" +
-                        "   \"shippriority\" integer,\n" +
-                        "   \"comment\" varchar\n" +
-                        ")\n" +
-                        "WITH (\n" +
-                        "   \"format-version\" = '2',\n" +
-                        "   location = '%s',\n" +
-                        "   \"read.split.target-size\" = 134217728,\n" +
-                        "   \"write.delete.mode\" = 'merge-on-read',\n" +
-                        "   \"write.format.default\" = 'PARQUET',\n" +
-                        "   \"write.metadata.delete-after-commit.enabled\" = false,\n" +
-                        "   \"write.metadata.metrics.max-inferred-column-defaults\" = 100,\n" +
-                        "   \"write.metadata.previous-versions-max\" = 100,\n" +
-                        "   \"write.update.mode\" = 'merge-on-read'\n" +
-                        ")", schemaName, getLocation(schemaName, "orders")));
+
+        validateShowCreateTable("orders",
+                ImmutableList.of(
+                        columnDefinition("orderkey", "bigint"),
+                        columnDefinition("custkey", "bigint"),
+                        columnDefinition("orderstatus", "varchar"),
+                        columnDefinition("totalprice", "double"),
+                        columnDefinition("orderdate", "date"),
+                        columnDefinition("orderpriority", "varchar"),
+                        columnDefinition("clerk", "varchar"),
+                        columnDefinition("shippriority", "integer"),
+                        columnDefinition("comment", "varchar")),
+                getCustomizedTableProperties(ImmutableMap.of(
+                        "location", "'" + getLocation(schemaName, "orders") + "'")));
     }
 
     @Test
@@ -229,24 +224,12 @@ public abstract class IcebergDistributedSmokeTestBase
             assertUpdate(format("CREATE TABLE %s(a int, b varchar) with (\"write.data.path\" = '%s')", tableName, dataWriteLocation));
             String schemaName = getSession().getSchema().get();
             String location = getLocation(schemaName, tableName);
-            String createTableSql = "CREATE TABLE iceberg.%s.%s (\n" +
-                    "   \"a\" integer,\n" +
-                    "   \"b\" varchar\n" +
-                    ")\n" +
-                    "WITH (\n" +
-                    "   \"format-version\" = '2',\n" +
-                    "   location = '%s',\n" +
-                    "   \"read.split.target-size\" = 134217728,\n" +
-                    "   \"write.data.path\" = '%s',\n" +
-                    "   \"write.delete.mode\" = 'merge-on-read',\n" +
-                    "   \"write.format.default\" = 'PARQUET',\n" +
-                    "   \"write.metadata.delete-after-commit.enabled\" = false,\n" +
-                    "   \"write.metadata.metrics.max-inferred-column-defaults\" = 100,\n" +
-                    "   \"write.metadata.previous-versions-max\" = 100,\n" +
-                    "   \"write.update.mode\" = 'merge-on-read'\n" +
-                    ")";
-            assertThat(computeActual("SHOW CREATE TABLE " + tableName).getOnlyValue())
-                    .isEqualTo(format(createTableSql, schemaName, tableName, location, dataWriteLocation));
+
+            validateShowCreateTable(tableName,
+                    ImmutableList.of(columnDefinition("a", "integer"), columnDefinition("b", "varchar")),
+                    getCustomizedTableProperties(ImmutableMap.of(
+                            "location", "'" + location + "'",
+                            "write.data.path", "'" + dataWriteLocation + "'")));
         }
         finally {
             try {
@@ -509,8 +492,9 @@ public abstract class IcebergDistributedSmokeTestBase
 
     protected void testCreatePartitionedTableAs(Session session, FileFormat fileFormat)
     {
+        String tableName = "test_create_partitioned_table_as_" + fileFormat.toString().toLowerCase(ENGLISH);
         @Language("SQL") String createTable = "" +
-                "CREATE TABLE test_create_partitioned_table_as_" + fileFormat.toString().toLowerCase(ENGLISH) + " " +
+                "CREATE TABLE " + tableName + " " +
                 "WITH (" +
                 "\"write.format.default\" = '" + fileFormat + "', " +
                 "partitioning = ARRAY['ORDER_STATUS', 'Ship_Priority', 'Bucket(order_key,9)']" +
@@ -521,35 +505,19 @@ public abstract class IcebergDistributedSmokeTestBase
 
         assertUpdate(session, createTable, "SELECT count(*) from orders");
 
-        String createTableSql = format("" +
-                        "CREATE TABLE %s.%s.%s (\n" +
-                        "   \"order_key\" bigint,\n" +
-                        "   \"ship_priority\" integer,\n" +
-                        "   \"order_status\" varchar\n" +
-                        ")\n" +
-                        "WITH (\n" +
-                        "   \"format-version\" = '2',\n" +
-                        "   location = '%s',\n" +
-                        "   partitioning = ARRAY['order_status','ship_priority','bucket(order_key, 9)'],\n" +
-                        "   \"read.split.target-size\" = 134217728,\n" +
-                        "   \"write.delete.mode\" = 'merge-on-read',\n" +
-                        "   \"write.format.default\" = '" + fileFormat + "',\n" +
-                        "   \"write.metadata.delete-after-commit.enabled\" = false,\n" +
-                        "   \"write.metadata.metrics.max-inferred-column-defaults\" = 100,\n" +
-                        "   \"write.metadata.previous-versions-max\" = 100,\n" +
-                        "   \"write.update.mode\" = 'merge-on-read'\n" +
-                        ")",
-                getSession().getCatalog().get(),
-                getSession().getSchema().get(),
-                "test_create_partitioned_table_as_" + fileFormat.toString().toLowerCase(ENGLISH),
-                getLocation(getSession().getSchema().get(), "test_create_partitioned_table_as_" + fileFormat.toString().toLowerCase(ENGLISH)));
+        validateShowCreateTable(tableName,
+                ImmutableList.of(
+                        columnDefinition("order_key", "bigint"),
+                        columnDefinition("ship_priority", "integer"),
+                        columnDefinition("order_status", "varchar")),
+                getCustomizedTableProperties(ImmutableMap.of(
+                        "write.format.default", "'" + fileFormat + "'",
+                        "location", "'" + getLocation(getSession().getSchema().get(), tableName) + "'",
+                        "partitioning", "ARRAY['order_status','ship_priority','bucket(order_key, 9)']")));
 
-        MaterializedResult actualResult = computeActual("SHOW CREATE TABLE test_create_partitioned_table_as_" + fileFormat.toString().toLowerCase(ENGLISH));
-        assertEquals(getOnlyElement(actualResult.getOnlyColumnAsSet()), createTableSql);
+        assertQuery(session, "SELECT * from " + tableName, "SELECT orderkey, shippriority, orderstatus FROM orders");
 
-        assertQuery(session, "SELECT * from test_create_partitioned_table_as_" + fileFormat.toString().toLowerCase(ENGLISH), "SELECT orderkey, shippriority, orderstatus FROM orders");
-
-        dropTable(session, "test_create_partitioned_table_as_" + fileFormat.toString().toLowerCase(ENGLISH));
+        dropTable(session, tableName);
     }
 
     @Test
@@ -728,26 +696,12 @@ public abstract class IcebergDistributedSmokeTestBase
 
         assertUpdate(format(createTable, schemaName, "test table comment"));
 
-        String createTableTemplate = "" +
-                "CREATE TABLE iceberg.%s.test_table_comments (\n" +
-                "   \"_x\" bigint\n" +
-                ")\n" +
-                "COMMENT '%s'\n" +
-                "WITH (\n" +
-                "   \"format-version\" = '2',\n" +
-                "   location = '%s',\n" +
-                "   \"read.split.target-size\" = 134217728,\n" +
-                "   \"write.delete.mode\" = 'merge-on-read',\n" +
-                "   \"write.format.default\" = 'ORC',\n" +
-                "   \"write.metadata.delete-after-commit.enabled\" = false,\n" +
-                "   \"write.metadata.metrics.max-inferred-column-defaults\" = 100,\n" +
-                "   \"write.metadata.previous-versions-max\" = 100,\n" +
-                "   \"write.update.mode\" = 'merge-on-read'\n" +
-                ")";
-        String createTableSql = format(createTableTemplate, schemaName, "test table comment", getLocation(schemaName, "test_table_comments"));
-
-        MaterializedResult resultOfCreate = computeActual("SHOW CREATE TABLE test_table_comments");
-        assertEquals(getOnlyElement(resultOfCreate.getOnlyColumnAsSet()), createTableSql);
+        validateShowCreateTable("iceberg", schemaName, "test_table_comments",
+                ImmutableList.of(columnDefinition("_x", "bigint")),
+                "test table comment",
+                getCustomizedTableProperties(ImmutableMap.of(
+                        "write.format.default", "'ORC'",
+                        "location", "'" + getLocation(schemaName, "test_table_comments") + "'")));
 
         dropTable(session, "test_table_comments");
     }
@@ -825,19 +779,13 @@ public abstract class IcebergDistributedSmokeTestBase
         Session session = getSession();
         String schemaName = session.getSchema().get();
 
-        assertUpdate(session, "CREATE TABLE test_create_table_like_original (col1 INTEGER, aDate DATE) WITH(\"write.format.default\" = 'PARQUET', partitioning = ARRAY['aDate'])");
-        assertEquals(getTablePropertiesString("test_create_table_like_original"), format("WITH (\n" +
-                "   \"format-version\" = '2',\n" +
-                "   location = '%s',\n" +
-                "   partitioning = ARRAY['adate'],\n" +
-                "   \"read.split.target-size\" = 134217728,\n" +
-                "   \"write.delete.mode\" = 'merge-on-read',\n" +
-                "   \"write.format.default\" = 'PARQUET',\n" +
-                "   \"write.metadata.delete-after-commit.enabled\" = false,\n" +
-                "   \"write.metadata.metrics.max-inferred-column-defaults\" = 100,\n" +
-                "   \"write.metadata.previous-versions-max\" = 100,\n" +
-                "   \"write.update.mode\" = 'merge-on-read'\n" +
-                ")", getLocation(schemaName, "test_create_table_like_original")));
+        assertUpdate(session, "CREATE TABLE test_create_table_like_original (col1 INTEGER, aDate DATE) WITH(format = 'PARQUET', partitioning = ARRAY['aDate'])");
+        validatePropertiesForShowCreateTable(session.getCatalog().get(),
+                "\"" + schemaName + "\"",
+                "test_create_table_like_original",
+                getCustomizedTableProperties(ImmutableMap.of(
+                        "location", "'" + getLocation(schemaName, "test_create_table_like_original") + "'",
+                        "partitioning", "ARRAY['adate']")));
 
         assertUpdate(session, "CREATE TABLE test_create_table_like_copy0 (LIKE test_create_table_like_original, col2 INTEGER)");
         assertUpdate(session, "INSERT INTO test_create_table_like_copy0 (col1, aDate, col2) VALUES (1, CAST('1950-06-28' AS DATE), 3)", 1);
@@ -845,82 +793,50 @@ public abstract class IcebergDistributedSmokeTestBase
         dropTable(session, "test_create_table_like_copy0");
 
         assertUpdate(session, "CREATE TABLE test_create_table_like_copy1 (LIKE test_create_table_like_original)");
-        assertEquals(getTablePropertiesString("test_create_table_like_copy1"), format("WITH (\n" +
-                "   \"format-version\" = '2',\n" +
-                "   location = '%s',\n" +
-                "   \"read.split.target-size\" = 134217728,\n" +
-                "   \"write.delete.mode\" = 'merge-on-read',\n" +
-                "   \"write.format.default\" = 'PARQUET',\n" +
-                "   \"write.metadata.delete-after-commit.enabled\" = false,\n" +
-                "   \"write.metadata.metrics.max-inferred-column-defaults\" = 100,\n" +
-                "   \"write.metadata.previous-versions-max\" = 100,\n" +
-                "   \"write.update.mode\" = 'merge-on-read'\n" +
-                ")", getLocation(schemaName, "test_create_table_like_copy1")));
+
+        validatePropertiesForShowCreateTable(session.getCatalog().get(),
+                "\"" + schemaName + "\"",
+                "test_create_table_like_copy1",
+                getCustomizedTableProperties(ImmutableMap.of(
+                                "location", "'" + getLocation(schemaName, "test_create_table_like_copy1") + "'")));
         dropTable(session, "test_create_table_like_copy1");
 
         assertUpdate(session, "CREATE TABLE test_create_table_like_copy2 (LIKE test_create_table_like_original EXCLUDING PROPERTIES)");
-        assertEquals(getTablePropertiesString("test_create_table_like_copy2"), format("WITH (\n" +
-                "   \"format-version\" = '2',\n" +
-                "   location = '%s',\n" +
-                "   \"read.split.target-size\" = 134217728,\n" +
-                "   \"write.delete.mode\" = 'merge-on-read',\n" +
-                "   \"write.format.default\" = 'PARQUET',\n" +
-                "   \"write.metadata.delete-after-commit.enabled\" = false,\n" +
-                "   \"write.metadata.metrics.max-inferred-column-defaults\" = 100,\n" +
-                "   \"write.metadata.previous-versions-max\" = 100,\n" +
-                "   \"write.update.mode\" = 'merge-on-read'\n" +
-                ")", getLocation(schemaName, "test_create_table_like_copy2")));
+        validatePropertiesForShowCreateTable(session.getCatalog().get(),
+                "\"" + schemaName + "\"",
+                "test_create_table_like_copy2",
+                getCustomizedTableProperties(ImmutableMap.of(
+                        "location", "'" + getLocation(schemaName, "test_create_table_like_copy2") + "'")));
         dropTable(session, "test_create_table_like_copy2");
 
         if (!catalogType.equals(HADOOP)) {
             assertUpdate(session, "CREATE TABLE test_create_table_like_copy3 (LIKE test_create_table_like_original INCLUDING PROPERTIES)");
-            assertEquals(getTablePropertiesString("test_create_table_like_copy3"), format("WITH (\n" +
-                            "   \"format-version\" = '2',\n" +
-                            "   location = '%s',\n" +
-                            "   partitioning = ARRAY['adate'],\n" +
-                            "   \"read.split.target-size\" = 134217728,\n" +
-                            "   \"write.delete.mode\" = 'merge-on-read',\n" +
-                            "   \"write.format.default\" = 'PARQUET',\n" +
-                            "   \"write.metadata.delete-after-commit.enabled\" = false,\n" +
-                            "   \"write.metadata.metrics.max-inferred-column-defaults\" = 100,\n" +
-                            "   \"write.metadata.previous-versions-max\" = 100,\n" +
-                            "   \"write.update.mode\" = 'merge-on-read'\n" +
-                            ")",
-                    getLocation(schemaName, "test_create_table_like_original")));
+            validatePropertiesForShowCreateTable(session.getCatalog().get(),
+                    "\"" + schemaName + "\"",
+                    "test_create_table_like_copy3",
+                    getCustomizedTableProperties(ImmutableMap.of(
+                            "location", "'" + getLocation(schemaName, "test_create_table_like_original") + "'",
+                            "partitioning", "ARRAY['adate']")));
             dropTable(session, "test_create_table_like_copy3");
 
-            assertUpdate(session, "CREATE TABLE test_create_table_like_copy4 (LIKE test_create_table_like_original INCLUDING PROPERTIES) WITH (\"write.format.default\" = 'ORC')");
-            assertEquals(getTablePropertiesString("test_create_table_like_copy4"), format("WITH (\n" +
-                            "   \"format-version\" = '2',\n" +
-                            "   location = '%s',\n" +
-                            "   partitioning = ARRAY['adate'],\n" +
-                            "   \"read.split.target-size\" = 134217728,\n" +
-                            "   \"write.delete.mode\" = 'merge-on-read',\n" +
-                            "   \"write.format.default\" = 'ORC',\n" +
-                            "   \"write.metadata.delete-after-commit.enabled\" = false,\n" +
-                            "   \"write.metadata.metrics.max-inferred-column-defaults\" = 100,\n" +
-                            "   \"write.metadata.previous-versions-max\" = 100,\n" +
-                            "   \"write.update.mode\" = 'merge-on-read'\n" +
-                            ")",
-                    getLocation(schemaName, "test_create_table_like_original")));
+            assertUpdate(session, "CREATE TABLE test_create_table_like_copy4 (LIKE test_create_table_like_original INCLUDING PROPERTIES) WITH (format = 'ORC')");
+            validatePropertiesForShowCreateTable(session.getCatalog().get(),
+                    "\"" + schemaName + "\"",
+                    "test_create_table_like_copy4",
+                    getCustomizedTableProperties(ImmutableMap.of(
+                            "write.format.default", "'ORC'",
+                            "location", "'" + getLocation(schemaName, "test_create_table_like_original") + "'",
+                            "partitioning", "ARRAY['adate']")));
             dropTable(session, "test_create_table_like_copy4");
         }
         else {
             assertUpdate(session, "CREATE TABLE test_create_table_like_copy5 (LIKE test_create_table_like_original INCLUDING PROPERTIES)" +
-                    " WITH (location = '', \"write.format.default\" = 'ORC')");
-            assertEquals(getTablePropertiesString("test_create_table_like_copy5"), format("WITH (\n" +
-                            "   \"format-version\" = '2',\n" +
-                            "   location = '%s',\n" +
-                            "   partitioning = ARRAY['adate'],\n" +
-                            "   \"read.split.target-size\" = 134217728,\n" +
-                            "   \"write.delete.mode\" = 'merge-on-read',\n" +
-                            "   \"write.format.default\" = 'ORC',\n" +
-                            "   \"write.metadata.delete-after-commit.enabled\" = false,\n" +
-                            "   \"write.metadata.metrics.max-inferred-column-defaults\" = 100,\n" +
-                            "   \"write.metadata.previous-versions-max\" = 100,\n" +
-                            "   \"write.update.mode\" = 'merge-on-read'\n" +
-                            ")",
-                    getLocation(schemaName, "test_create_table_like_copy5")));
+                    " WITH (location = '', format = 'ORC')");
+            validatePropertiesForShowCreateTable("test_create_table_like_copy5",
+                    getCustomizedTableProperties(ImmutableMap.of(
+                            "write.format.default", "'ORC'",
+                            "location", "'" + getLocation(schemaName, "test_create_table_like_copy5") + "'",
+                            "partitioning", "ARRAY['adate']")));
             dropTable(session, "test_create_table_like_copy5");
 
             assertQueryFails(session, "CREATE TABLE test_create_table_like_copy6 (LIKE test_create_table_like_original INCLUDING PROPERTIES)",
@@ -949,36 +865,18 @@ public abstract class IcebergDistributedSmokeTestBase
                 "FROM tpch.tiny.orders";
 
         Session session = getSession();
-
         assertUpdate(session, createTable, "SELECT count(*) from orders");
 
-        String createTableSql = format("" +
-                        "CREATE TABLE %s.%s.%s (\n" +
-                        "   \"order_key\" bigint,\n" +
-                        "   \"ship_priority\" integer,\n" +
-                        "   \"order_status\" varchar\n" +
-                        ")\n" +
-                        "WITH (\n" +
-                        "   \"format-version\" = '%s',\n" +
-                        "   location = '%s',\n" +
-                        "   \"read.split.target-size\" = 134217728,\n" +
-                        "   \"write.delete.mode\" = '%s',\n" +
-                        "   \"write.format.default\" = 'PARQUET',\n" +
-                        "   \"write.metadata.delete-after-commit.enabled\" = false,\n" +
-                        "   \"write.metadata.metrics.max-inferred-column-defaults\" = 100,\n" +
-                        "   \"write.metadata.previous-versions-max\" = 100,\n" +
-                        "   \"write.update.mode\" = '%s'\n" +
-                        ")",
-                getSession().getCatalog().get(),
-                getSession().getSchema().get(),
-                "test_create_table_with_format_version_" + formatVersion,
-                formatVersion,
-                getLocation(getSession().getSchema().get(), "test_create_table_with_format_version_" + formatVersion),
-                defaultDeleteMode,
-                defaultDeleteMode);
-
-        MaterializedResult actualResult = computeActual("SHOW CREATE TABLE test_create_table_with_format_version_" + formatVersion);
-        assertEquals(getOnlyElement(actualResult.getOnlyColumnAsSet()), createTableSql);
+        validateShowCreateTable("test_create_table_with_format_version_" + formatVersion,
+                ImmutableList.of(
+                        columnDefinition("order_key", "bigint"),
+                        columnDefinition("ship_priority", "integer"),
+                        columnDefinition("order_status", "varchar")),
+                getCustomizedTableProperties(ImmutableMap.of(
+                        "write.delete.mode", "'" + defaultDeleteMode + "'",
+                        "format-version", "'" + formatVersion + "'",
+                        "location", "'" + getLocation(getSession().getSchema().get(), "test_create_table_with_format_version_" + formatVersion) + "'",
+                        "write.update.mode", "'" + defaultDeleteMode + "'")));
 
         dropTable(session, "test_create_table_with_format_version_" + formatVersion);
     }
@@ -987,19 +885,6 @@ public abstract class IcebergDistributedSmokeTestBase
     {
         test.accept("1", "copy-on-write");
         test.accept("2", "merge-on-read");
-    }
-
-    protected String getTablePropertiesString(String tableName)
-    {
-        MaterializedResult showCreateTable = computeActual("SHOW CREATE TABLE " + tableName);
-        String createTable = (String) getOnlyElement(showCreateTable.getOnlyColumnAsSet());
-        Matcher matcher = WITH_CLAUSE_EXTRACTER.matcher(createTable);
-        if (matcher.matches()) {
-            return matcher.group(1);
-        }
-        else {
-            return null;
-        }
     }
 
     @Test
@@ -1652,12 +1537,39 @@ public abstract class IcebergDistributedSmokeTestBase
     @Test
     public void testBucketTransformOnTime()
     {
-        //TODO: Not yet support bucket transform for time, which was supported by Iceberg
-        assertUpdate("create table test_bucket_transform_time(col_time time)" +
-                "with (partitioning = ARRAY['bucket(col_time, 2)'])");
-        assertQueryFails("insert into test_bucket_transform_time values(time '01:02:03.123')",
-                "Unsupported type for 'bucket': 1000: col_time_bucket: bucket\\[2\\]\\(1\\)");
-        assertUpdate("drop table if exists test_bucket_transform_time");
+        testWithAllFileFormats(this::testBucketTransformsOnTimeForFormat);
+    }
+
+    private void testBucketTransformsOnTimeForFormat(Session session, FileFormat format)
+    {
+        String select = "SELECT a_bucket, row_count, a.min AS a_min, a.max AS a_max, b.min AS b_min, b.max AS b_max FROM \"test_bucket_transform_on_time$partitions\"";
+
+        assertUpdate(session, format("CREATE TABLE test_bucket_transform_on_time (a TIME, b BIGINT)" +
+                " WITH (\"write.format.default\" = '%s', partitioning = ARRAY['bucket(a, 4)'])", format.name()));
+        String insertSql = "INSERT INTO test_bucket_transform_on_time VALUES" +
+                "(time '01:02:03.123', 1)," +
+                "(time '21:22:50.002', 2)," +
+                "(time '12:13:14.345', 3)," +
+                "(time '00:00:01.001', 4)," +
+                "(time '23:23:59.999', 5)," +
+                "(time '00:00:00.000', 6)," +
+                "(time '07:31:55.425', 7)";
+        assertUpdate(session, insertSql, 7);
+
+        assertQuery(session, "SELECT COUNT(*) FROM \"test_bucket_transform_on_time$partitions\"", "SELECT 4");
+
+        assertQuery(session, select + " WHERE a_bucket = 0", "VALUES(0, 2, time '00:00:00.000', time '12:13:14.345', 3, 6)");
+        assertQuery(session, select + " WHERE a_bucket = 1", "VALUES(1, 1, time '23:23:59.999', time '23:23:59.999', 5, 5)");
+        assertQuery(session, select + " WHERE a_bucket = 2", "VALUES(2, 1, time '21:22:50.002', time '21:22:50.002', 2, 2)");
+        assertQuery(session, select + " WHERE a_bucket = 3", "VALUES(3, 3, time '00:00:01.001', time '07:31:55.425', 1, 7)");
+
+        assertQuery(session, "select * from test_bucket_transform_on_time where a = time '01:02:03.123'",
+                "VALUES(time '01:02:03.123', 1)");
+        assertQuery(session, "select * from test_bucket_transform_on_time where a > time '01:02:03.123' and a <= time '12:13:14.345'",
+                "VALUES(time '07:31:55.425', 7), (time '12:13:14.345', 3)");
+        assertQuery(session, "select * from test_bucket_transform_on_time where a in (time '00:00:01.001', time '21:22:50.002')",
+                "VALUES(time '00:00:01.001', 4), (time '21:22:50.002', 2)");
+        dropTable(session, "test_bucket_transform_on_time");
     }
 
     @Test
@@ -2134,25 +2046,6 @@ public abstract class IcebergDistributedSmokeTestBase
                 format("Table does not exist: iceberg.%s.non_existent_test_table2", getSession().getSchema().get()));
     }
 
-    protected HdfsEnvironment getHdfsEnvironment()
-    {
-        HiveClientConfig hiveClientConfig = new HiveClientConfig();
-        MetastoreClientConfig metastoreClientConfig = new MetastoreClientConfig();
-        HiveS3Config hiveS3Config = new HiveS3Config();
-        return IcebergDistributedTestBase.getHdfsEnvironment(hiveClientConfig, metastoreClientConfig, hiveS3Config);
-    }
-
-    private static String getMetadataFileLocation(ConnectorSession session, HdfsEnvironment hdfsEnvironment, String schema, String table, String metadataLocation)
-    {
-        metadataLocation = stripTrailingSlash(metadataLocation);
-        org.apache.hadoop.fs.Path metadataDir = new org.apache.hadoop.fs.Path(metadataLocation, METADATA_FOLDER_NAME);
-        FileSystem fileSystem = getFileSystem(session, hdfsEnvironment, new SchemaTableName(schema, table), metadataDir);
-        return resolveLatestMetadataLocation(
-                session,
-                fileSystem,
-                metadataDir).getName();
-    }
-
     @Test
     public void testDeprecatedTablePropertiesCreateTable()
     {
@@ -2194,5 +2087,123 @@ public abstract class IcebergDistributedSmokeTestBase
                     .anyMatch(code -> code.getWarningCode().equals(USE_OF_DEPRECATED_TABLE_PROPERTY.toWarningCode())));
             assertUpdate(session, "DROP TABLE " + tableName);
         });
+    }
+
+    protected HdfsEnvironment getHdfsEnvironment()
+    {
+        HiveClientConfig hiveClientConfig = new HiveClientConfig();
+        MetastoreClientConfig metastoreClientConfig = new MetastoreClientConfig();
+        HiveS3Config hiveS3Config = new HiveS3Config();
+        return IcebergDistributedTestBase.getHdfsEnvironment(hiveClientConfig, metastoreClientConfig, hiveS3Config);
+    }
+
+    /**
+     * Based on the default table properties and their default values, construct a customized map of
+     * table properties which applies the specified override table properties
+     */
+    protected Map<String, String> getCustomizedTableProperties(Map<String, String> overrideProperties)
+    {
+        Map<String, String> propertiesMap = new HashMap<>();
+        propertiesMap.put("write.delete.mode", "'merge-on-read'");
+        propertiesMap.put("write.format.default", "'PARQUET'");
+        propertiesMap.put("format-version", "'2'");
+        propertiesMap.put("write.metadata.delete-after-commit.enabled", "false");
+        propertiesMap.put("write.metadata.previous-versions-max", "100");
+        propertiesMap.put("write.metadata.metrics.max-inferred-column-defaults", "100");
+        propertiesMap.put("write.update.mode", "'merge-on-read'");
+        propertiesMap.put("read.split.target-size", "134217728");
+
+        propertiesMap.putAll(overrideProperties);
+        return ImmutableMap.copyOf(propertiesMap);
+    }
+
+    protected void validatePropertiesForShowCreateTable(String table, Map<String, String> propertyDescriptions)
+    {
+        String catalog = getSession().getCatalog().get();
+        String schema = getSession().getSchema().get();
+        validateShowCreateTableInner(catalog, schema, table, Optional.empty(),
+                Optional.empty(), propertyDescriptions);
+    }
+
+    protected void validatePropertiesForShowCreateTable(String catalog, String schema, String table, Map<String, String> propertyDescriptions)
+    {
+        validateShowCreateTableInner(catalog, schema, table, Optional.empty(),
+                Optional.empty(), propertyDescriptions);
+    }
+
+    protected void validateShowCreateTable(String table,
+                                           List<ColumnDefinition> columnDefinitions,
+                                           Map<String, String> propertyDescriptions)
+    {
+        String catalog = getSession().getCatalog().get();
+        String schema = getSession().getSchema().get();
+        validateShowCreateTableInner(catalog, schema, table, Optional.ofNullable(columnDefinitions),
+                Optional.empty(), propertyDescriptions);
+    }
+
+    protected void validateShowCreateTable(String catalog, String schema, String table,
+                                           List<ColumnDefinition> columnDefinitions,
+                                           String comment,
+                                           Map<String, String> propertyDescriptions)
+    {
+        validateShowCreateTableInner(catalog, schema, table, Optional.ofNullable(columnDefinitions),
+                Optional.ofNullable(comment), propertyDescriptions);
+    }
+
+    protected ColumnDefinition columnDefinition(String name, String type)
+    {
+        return new ColumnDefinition(new Identifier(name, true), type, true, ImmutableList.of(), Optional.empty());
+    }
+
+    private void validateShowCreateTableInner(String catalog, String schema, String table,
+                                              Optional<List<ColumnDefinition>> columnDefinitions,
+                                              Optional<String> commentDescription,
+                                              Map<String, String> propertyDescriptions)
+    {
+        MaterializedResult showCreateTable = computeActual(format("SHOW CREATE TABLE %s.%s.%s", catalog, schema, table));
+        String createTableSql = (String) getOnlyElement(showCreateTable.getOnlyColumnAsSet());
+
+        SqlParser parser = new SqlParser();
+        parser.createStatement(createTableSql).accept(new AstVisitor<Void, Void>() {
+            @Override
+            protected Void visitCreateTable(CreateTable node, Void context)
+            {
+                columnDefinitions.ifPresent(columnDefinitionList -> {
+                    ImmutableList.Builder<ColumnDefinition> columnDefinitionsBuilder = ImmutableList.builder();
+                    node.getElements().forEach(element -> element.accept(new AstVisitor<Void, Void>() {
+                        @Override
+                        protected Void visitColumnDefinition(ColumnDefinition node, Void context)
+                        {
+                            columnDefinitionsBuilder.add(node);
+                            return null;
+                        }
+                    }, null));
+                    assertEquals(columnDefinitionList, columnDefinitionsBuilder.build());
+                });
+
+                commentDescription.ifPresent(comment -> {
+                    assertTrue(node.getComment().isPresent());
+                    assertEquals(comment, node.getComment().get());
+                });
+
+                ImmutableMap.Builder<String, String> propertiesBuilder = ImmutableMap.builder();
+                node.getProperties().forEach(property -> {
+                    propertiesBuilder.put(property.getName().getValue(), property.getValue().toString());
+                });
+                assertEquals(propertyDescriptions, propertiesBuilder.build());
+                return null;
+            }
+        }, null);
+    }
+
+    private static String getMetadataFileLocation(ConnectorSession session, HdfsEnvironment hdfsEnvironment, String schema, String table, String metadataLocation)
+    {
+        metadataLocation = stripTrailingSlash(metadataLocation);
+        org.apache.hadoop.fs.Path metadataDir = new org.apache.hadoop.fs.Path(metadataLocation, METADATA_FOLDER_NAME);
+        FileSystem fileSystem = getFileSystem(session, hdfsEnvironment, new SchemaTableName(schema, table), metadataDir);
+        return resolveLatestMetadataLocation(
+                session,
+                fileSystem,
+                metadataDir).getName();
     }
 }

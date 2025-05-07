@@ -15,15 +15,22 @@ package com.facebook.presto.nativeworker;
 
 import com.facebook.presto.Session;
 import com.facebook.presto.common.type.RowType;
+import com.facebook.presto.execution.QueryInfo;
+import com.facebook.presto.execution.StageInfo;
+import com.facebook.presto.execution.TaskInfo;
+import com.facebook.presto.operator.OperatorStats;
 import com.facebook.presto.spi.ColumnMetadata;
 import com.facebook.presto.spi.ConnectorTableMetadata;
+import com.facebook.presto.spi.QueryId;
 import com.facebook.presto.spi.SchemaTableName;
+import com.facebook.presto.spi.plan.SortNode;
 import com.facebook.presto.sql.analyzer.FeaturesConfig;
 import com.facebook.presto.sql.planner.plan.ExchangeNode;
 import com.facebook.presto.testing.MaterializedResult;
 import com.facebook.presto.testing.MaterializedRow;
 import com.facebook.presto.testing.QueryRunner;
 import com.facebook.presto.tests.AbstractTestQueryFramework;
+import com.facebook.presto.tests.DistributedQueryRunner;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import org.intellij.lang.annotations.Language;
@@ -36,10 +43,12 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
+import static com.facebook.presto.SystemSessionProperties.DISTRIBUTED_SORT;
 import static com.facebook.presto.SystemSessionProperties.INLINE_SQL_FUNCTIONS;
 import static com.facebook.presto.SystemSessionProperties.JOIN_DISTRIBUTION_TYPE;
 import static com.facebook.presto.SystemSessionProperties.KEY_BASED_SAMPLING_ENABLED;
 import static com.facebook.presto.SystemSessionProperties.NATIVE_MIN_COLUMNAR_ENCODING_CHANNELS_TO_PREFER_ROW_WISE_ENCODING;
+import static com.facebook.presto.SystemSessionProperties.SINGLE_NODE_EXECUTION_ENABLED;
 import static com.facebook.presto.common.type.BigintType.BIGINT;
 import static com.facebook.presto.common.type.VarcharType.VARCHAR;
 import static com.facebook.presto.hive.HiveStorageFormat.DWRF;
@@ -81,6 +90,7 @@ import static com.facebook.presto.sql.planner.plan.ExchangeNode.Scope.REMOTE_STR
 import static com.facebook.presto.sql.planner.plan.ExchangeNode.Type.GATHER;
 import static com.facebook.presto.sql.planner.plan.ExchangeNode.Type.REPARTITION;
 import static com.facebook.presto.transaction.TransactionBuilder.transaction;
+import static com.google.common.collect.Iterables.getOnlyElement;
 import static java.lang.String.format;
 import static java.util.stream.Collectors.toList;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -1891,6 +1901,92 @@ public abstract class AbstractTestNativeGeneralQueries
         assertThat(getQueryRunner().execute(session, "EXPLAIN (TYPE DISTRIBUTED) " + wideAggregation).getOnlyValue().toString())
                 .contains("Output encoding: ROW_WISE");
     }
+    @Test
+    public void testUuid()
+    {
+        // Valid UUIDs. Note: These evaluate on the coordinator. They are used in subsequent SQL.
+        assertQuery("SELECT cast('33355449-2c7d-43d7-967a-f53cd23215ad' AS uuid)");
+        assertQuery("SELECT cast('eed9f812-4b0c-472f-8a10-4ae7bff79a47' AS uuid)");
+        assertQuery("SELECT cast('f768f36d-4f09-4da7-a298-3564d8f3c986' AS uuid)");
+        String tmpTableName = generateRandomTableName();
+        getQueryRunner().execute(format("CREATE TABLE %s " +
+                "AS " +
+                "SELECT c_uuid  " +
+                "FROM ( " +
+                "  VALUES " +
+                "    (null), " +
+                "    ('33355449-2c7d-43d7-967a-f53cd23215ad')," +
+                "    ('eed9f812-4b0c-472f-8a10-4ae7bff79a47')," +
+                "    ('f768f36d-4f09-4da7-a298-3564d8f3c986')," +
+                "    (cast(uuid() AS VARCHAR))" +
+                ") AS x (c_uuid)", tmpTableName));
+        // Validates UUID projects the same for Java and Native engine.
+        assertQuery(format("SELECT CAST(c_uuid AS uuid) FROM %s", tmpTableName));
+        // Round-trip CAST between UUID and varchar.
+        assertQuery(format("SELECT CAST(CAST(c_uuid AS uuid) AS VARCHAR) FROM %s", tmpTableName));
+
+        // Invalid cast on both Presto Java and Native.
+        assertQueryFails(format("SELECT CAST(CAST(c_uuid as uuid) AS INTEGER) FROM %s", tmpTableName), ".*Cannot cast uuid to integer.*");
+        // Cast from UUID->VARBINARY is valid.
+        assertQuery(format("SELECT CAST(CAST(c_uuid AS uuid) AS VARBINARY) FROM %s", tmpTableName));
+
+        // UUID equi join.
+        assertQuery(format("SELECT a, b FROM " +
+                "(SELECT CAST(c_uuid AS uuid) as a FROM %s) AS A, " +
+                "(SELECT CAST(c_uuid AS uuid) as b FROM %s) AS B " +
+                "WHERE a = b", tmpTableName, tmpTableName));
+
+        assertQuery(format("SELECT a, b FROM " +
+                "(SELECT CAST(c_uuid AS uuid) as a FROM %s) AS A, " +
+                "(SELECT CAST(c_uuid AS uuid) as b FROM %s) AS B " +
+                "WHERE a < b", tmpTableName, tmpTableName));
+
+        assertQuery(format("SELECT a, b FROM " +
+                "(SELECT CAST(c_uuid AS uuid) as a FROM %s) AS A, " +
+                "(SELECT CAST(c_uuid AS uuid) as b FROM %s) AS B " +
+                "WHERE a <= b", tmpTableName, tmpTableName));
+
+        assertQuery(format("SELECT a, b FROM " +
+                "(SELECT CAST(c_uuid AS uuid) as a FROM %s) AS A, " +
+                "(SELECT CAST(c_uuid AS uuid) as b FROM %s) AS B " +
+                "WHERE a > b", tmpTableName, tmpTableName));
+
+        assertQuery(format("SELECT a, b FROM " +
+                "(SELECT CAST(c_uuid AS uuid) as a FROM %s) AS A, " +
+                "(SELECT CAST(c_uuid AS uuid) as b FROM %s) AS B " +
+                "WHERE a >= b", tmpTableName, tmpTableName));
+
+        assertQuery(format("SELECT a, b FROM " +
+                "(SELECT CAST(c_uuid AS uuid) as a FROM %s) AS A, " +
+                "(SELECT CAST(c_uuid AS uuid) as b FROM %s) AS B, " +
+                "(SELECT CAST(c_uuid AS uuid) as c FROM %s) AS C " +
+                "WHERE a BETWEEN b AND c", tmpTableName, tmpTableName, tmpTableName));
+
+        getQueryRunner().execute(format("DROP TABLE %s", tmpTableName));
+    }
+
+    @Test
+    public void testInvalidUuid()
+    {
+        // Invalid UUID. Note: This evaluates on the co-ordinator. This is used in subsequent SQL.
+        assertQueryFails("SELECT cast('0E984725-C51C-4BF4-9960-H1C80E27ABA0' AS uuid)",
+                "Cannot cast value to UUID: 0E984725-C51C-4BF4-9960-H1C80E27ABA0");
+        assertQuery("SELECT try_cast('0E984725-C51C-4BF4-9960-H1C80E27ABA0' AS uuid)");
+
+        String tmpTableName = generateRandomTableName();
+        // The Invalid UUID from above is rejected on the native engine as well.
+        getQueryRunner().execute(format("CREATE TABLE %s " +
+                "AS " +
+                "SELECT c_uuid  " +
+                "FROM ( " +
+                "  VALUES " +
+                "    ('0E984725-C51C-4BF4-9960-H1C80E27ABA0')" +
+                ") AS x (c_uuid)", tmpTableName));
+        assertQueryFails(format("SELECT CAST(c_uuid AS uuid) FROM %s", tmpTableName),
+                ".*bad lexical cast: source type value could not be interpreted as target.*");
+        assertQuery(format("SELECT try_cast(c_uuid AS uuid) FROM %s", tmpTableName));
+        getQueryRunner().execute(format("DROP TABLE %s", tmpTableName));
+    }
 
     private void assertQueryResultCount(String sql, int expectedResultCount)
     {
@@ -1907,5 +2003,48 @@ public abstract class AbstractTestNativeGeneralQueries
         return inputRows.stream()
                 .filter(row -> Pattern.matches(sessionPropertyName, row.getFields().get(4).toString()))
                 .collect(toList());
+    }
+
+    @Test
+    public void testDistributedSortSingleNode()
+    {
+        assertDistributedSortSingleNode("SELECT orderkey FROM orders ORDER BY orderkey");
+        assertDistributedSortSingleNode("SELECT DISTINCT orderkey FROM orders ORDER BY 1");
+        assertDistributedSortSingleNode("SELECT orderstatus, SUM(totalprice) FROM orders GROUP BY orderstatus ORDER BY 2 DESC");
+    }
+
+    private void assertDistributedSortSingleNode(String query)
+    {
+        Session session = Session.builder(getSession())
+                .setSystemProperty(DISTRIBUTED_SORT, "true")
+                .setSystemProperty(SINGLE_NODE_EXECUTION_ENABLED, "true")
+                .build();
+        assertQuery(session, query, plan -> {
+            SortNode sortNode = searchFrom(plan.getRoot())
+                    .where(node -> node instanceof SortNode)
+                    .findOnlyElement();
+            assertTrue(sortNode.isPartial());
+        });
+        DistributedQueryRunner runner = getDistributedQueryRunner();
+        QueryId queryId = runner.executeWithQueryId(session, query).getQueryId();
+        QueryInfo queryInfo = runner.getQueryInfo(queryId);
+        OperatorStats sortStats = findSortStats(queryInfo);
+        assertThat(sortStats.getTotalDrivers())
+                .isGreaterThan(1);
+    }
+
+    private OperatorStats findSortStats(QueryInfo queryInfo)
+    {
+        // exactly one stage is expected
+        StageInfo stageInfo = getOnlyElement(queryInfo.getOutputStage()
+                .orElseThrow(() -> new AssertionError("stage info is expected to be set"))
+                .getAllStages());
+        // exactly one task is expected
+        TaskInfo taskInfo = getOnlyElement(stageInfo.getLatestAttemptExecutionInfo().getTasks());
+        // exactly one sort operator is expected
+        return getOnlyElement(taskInfo.getStats().getPipelines().stream()
+                .flatMap(pipelineStats -> pipelineStats.getOperatorSummaries().stream())
+                .filter(operatorStats -> operatorStats.getOperatorType().contains("OrderBy"))
+                .collect(toList()));
     }
 }

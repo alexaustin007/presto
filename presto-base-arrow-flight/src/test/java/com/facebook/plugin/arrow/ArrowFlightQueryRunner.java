@@ -26,9 +26,15 @@ import org.apache.arrow.flight.Location;
 import org.apache.arrow.memory.RootAllocator;
 
 import java.io.File;
+import java.io.IOException;
+import java.net.ServerSocket;
+import java.net.URI;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.BiFunction;
 
+import static com.facebook.plugin.arrow.testingConnector.TestingArrowFlightPlugin.ARROW_FLIGHT_CATALOG;
+import static com.facebook.plugin.arrow.testingConnector.TestingArrowFlightPlugin.ARROW_FLIGHT_CONNECTOR;
 import static com.facebook.presto.testing.TestingSession.testSessionBuilder;
 
 public class ArrowFlightQueryRunner
@@ -38,23 +44,38 @@ public class ArrowFlightQueryRunner
         throw new UnsupportedOperationException("This is a utility class and cannot be instantiated");
     }
 
-    public static DistributedQueryRunner createQueryRunner(int flightServerPort) throws Exception
+    public static int findUnusedPort()
+            throws IOException
     {
-        return createQueryRunner(ImmutableMap.of("arrow-flight.server.port", String.valueOf(flightServerPort)));
+        try (ServerSocket socket = new ServerSocket(0)) {
+            return socket.getLocalPort();
+        }
     }
 
-    private static DistributedQueryRunner createQueryRunner(Map<String, String> catalogProperties) throws Exception
+    public static DistributedQueryRunner createQueryRunner(int flightServerPort) throws Exception
     {
-        return createQueryRunner(ImmutableMap.of(), catalogProperties);
+        return createQueryRunner(flightServerPort, ImmutableMap.of(), ImmutableMap.of(), Optional.empty());
+    }
+
+    public static DistributedQueryRunner createQueryRunner(
+            int flightServerPort,
+            Map<String, String> extraProperties,
+            Map<String, String> coordinatorProperties,
+            Optional<BiFunction<Integer, URI, Process>> externalWorkerLauncher)
+            throws Exception
+    {
+        return createQueryRunner(extraProperties, ImmutableMap.of("arrow-flight.server.port", String.valueOf(flightServerPort)), coordinatorProperties, externalWorkerLauncher);
     }
 
     private static DistributedQueryRunner createQueryRunner(
             Map<String, String> extraProperties,
-            Map<String, String> catalogProperties)
+            Map<String, String> catalogProperties,
+            Map<String, String> coordinatorProperties,
+            Optional<BiFunction<Integer, URI, Process>> externalWorkerLauncher)
             throws Exception
     {
         Session session = testSessionBuilder()
-                .setCatalog("arrowflight")
+                .setCatalog(ARROW_FLIGHT_CATALOG)
                 .setSchema("tpch")
                 .build();
 
@@ -62,10 +83,14 @@ public class ArrowFlightQueryRunner
         Optional<Integer> workerCount = getProperty("WORKER_COUNT").map(Integer::parseInt);
         workerCount.ifPresent(queryRunnerBuilder::setNodeCount);
 
-        DistributedQueryRunner queryRunner = queryRunnerBuilder.setExtraProperties(extraProperties).build();
+        DistributedQueryRunner queryRunner = queryRunnerBuilder
+                .setExtraProperties(extraProperties)
+                .setCoordinatorProperties(coordinatorProperties)
+                .setExternalWorkerLauncher(externalWorkerLauncher).build();
 
         try {
-            queryRunner.installPlugin(new TestingArrowFlightPlugin());
+            boolean nativeExecution = externalWorkerLauncher.isPresent();
+            queryRunner.installPlugin(new TestingArrowFlightPlugin(nativeExecution));
 
             ImmutableMap.Builder<String, String> properties = ImmutableMap.<String, String>builder()
                     .putAll(catalogProperties)
@@ -73,16 +98,16 @@ public class ArrowFlightQueryRunner
                     .put("arrow-flight.server-ssl-enabled", "true")
                     .put("arrow-flight.server-ssl-certificate", "src/test/resources/server.crt");
 
-            queryRunner.createCatalog("arrowflight", "arrow-flight", properties.build());
+            queryRunner.createCatalog(ARROW_FLIGHT_CATALOG, ARROW_FLIGHT_CONNECTOR, properties.build());
 
             return queryRunner;
         }
         catch (Exception e) {
-            throw new RuntimeException("Failed to create ArrowQueryRunner", e);
+            throw new RuntimeException("Failed to create ArrowFlightQueryRunner", e);
         }
     }
 
-    private static Optional<String> getProperty(String name)
+    public static Optional<String> getProperty(String name)
     {
         String systemPropertyValue = System.getProperty(name);
         if (systemPropertyValue != null) {
@@ -116,7 +141,9 @@ public class ArrowFlightQueryRunner
 
         DistributedQueryRunner queryRunner = createQueryRunner(
                 ImmutableMap.of("http-server.http.port", "8080"),
-                ImmutableMap.of("arrow-flight.server.port", String.valueOf(9443)));
+                ImmutableMap.of("arrow-flight.server.port", String.valueOf(9443)),
+                ImmutableMap.of(),
+                Optional.empty());
         Thread.sleep(10);
         log.info("======== SERVER STARTED ========");
         log.info("\n====\n%s\n====", queryRunner.getCoordinator().getBaseUrl());

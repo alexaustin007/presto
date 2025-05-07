@@ -177,6 +177,13 @@ class SessionProperties {
   static constexpr const char* kDebugDisableExpressionWithLazyInputs =
       "native_debug_disable_expression_with_lazy_inputs";
 
+  /// Regex for filtering on memory pool name if not empty. This allows us to
+  /// only track the callsites of memory allocations for memory pools whose name
+  /// matches the specified regular expression. Empty string means no match for
+  /// all.
+  static constexpr const char* kDebugMemoryPoolNameRegex =
+      "native_debug_memory_pool_name_regex";
+
   /// Temporary flag to control whether selective Nimble reader should be used
   /// in this query or not.  Will be removed after the selective Nimble reader
   /// is fully rolled out.
@@ -283,9 +290,9 @@ class SessionProperties {
   static constexpr const char* kPrefixSortMinRows =
       "native_prefixsort_min_rows";
 
-  /// If true, enable the shuffle compression.
-  static constexpr const char* kShuffleCompressionEnabled =
-      "exchange_compression";
+  /// The compression algorithm type to compress the shuffle.
+  static constexpr const char* kShuffleCompressionCodec =
+      "exchange_compression_codec";
 
   /// If set to true, enables scaled processing for table scans.
   static constexpr const char* kTableScanScaledProcessingEnabled =
@@ -295,6 +302,12 @@ class SessionProperties {
   /// table scans. The value is in the range of [0, 1].
   static constexpr const char* kTableScanScaleUpMemoryUsageRatio =
       "native_table_scan_scale_up_memory_usage_ratio";
+
+  /// In streaming aggregation, wait until we have enough number of output rows
+  /// to produce a batch of size specified by this. If set to 0, then
+  /// Operator::outputBatchRows will be used as the min output batch rows.
+  static constexpr const char* kStreamingAggregationMinOutputBatchRows =
+      "native_streaming_aggregation_min_output_batch_rows";
 
   SessionProperties();
 

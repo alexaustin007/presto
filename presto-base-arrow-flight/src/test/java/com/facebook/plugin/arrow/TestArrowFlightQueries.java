@@ -29,6 +29,7 @@ import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
 import java.io.File;
+import java.io.IOException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -44,6 +45,7 @@ import static com.facebook.presto.common.type.TimestampType.TIMESTAMP;
 import static com.facebook.presto.common.type.VarcharType.VARCHAR;
 import static com.facebook.presto.common.type.VarcharType.createVarcharType;
 import static com.facebook.presto.testing.MaterializedResult.resultBuilder;
+import static com.facebook.presto.testing.assertions.Assert.assertEquals;
 import static java.lang.String.format;
 import static org.testng.Assert.assertTrue;
 
@@ -51,10 +53,16 @@ public class TestArrowFlightQueries
         extends AbstractTestQueries
 {
     private static final Logger logger = Logger.get(TestArrowFlightQueries.class);
+    private final int serverPort;
     private RootAllocator allocator;
     private FlightServer server;
-    private Location serverLocation;
     private DistributedQueryRunner arrowFlightQueryRunner;
+
+    public TestArrowFlightQueries()
+            throws IOException
+    {
+        this.serverPort = ArrowFlightQueryRunner.findUnusedPort();
+    }
 
     @BeforeClass
     public void setup()
@@ -65,8 +73,8 @@ public class TestArrowFlightQueries
         File privateKeyFile = new File("src/test/resources/server.key");
 
         allocator = new RootAllocator(Long.MAX_VALUE);
-        serverLocation = Location.forGrpcTls("localhost", 9443);
-        server = FlightServer.builder(allocator, serverLocation, new TestingArrowProducer(allocator))
+        Location location = Location.forGrpcTls("localhost", serverPort);
+        server = FlightServer.builder(allocator, location, new TestingArrowProducer(allocator))
                 .useTls(certChainFile, privateKeyFile)
                 .build();
 
@@ -87,7 +95,7 @@ public class TestArrowFlightQueries
     protected QueryRunner createQueryRunner()
             throws Exception
     {
-        return ArrowFlightQueryRunner.createQueryRunner(9443);
+        return ArrowFlightQueryRunner.createQueryRunner(serverPort);
     }
 
     @Test
@@ -135,6 +143,16 @@ public class TestArrowFlightQueries
                         getDateTimeAtZone("2005-12-31 23:59:59", session.getTimeZoneKey()))
                 .build();
         assertTrue(actualRow.equals(expectedRow));
+    }
+
+    @Test
+    public void testDescribeUnknownTable()
+    {
+        MaterializedResult actualRows = computeActual("DESCRIBE information_schema.enabled_roles");
+        MaterializedResult expectedRows = resultBuilder(getSession(), VARCHAR, VARCHAR, VARCHAR, VARCHAR)
+                .row("role_name", "varchar", "", "")
+                .build();
+        assertEquals(actualRows, expectedRows);
     }
 
     private LocalDate getDate(String dateString)

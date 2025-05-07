@@ -10,7 +10,7 @@
 
     <groupId>com.facebook.presto</groupId>
     <artifactId>presto-root</artifactId>
-    <version>0.292-SNAPSHOT</version>
+    <version>0.293-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>presto-root</name>
@@ -58,7 +58,7 @@
         <dep.joda.version>2.12.7</dep.joda.version>
         <dep.tempto.version>1.54</dep.tempto.version>
         <dep.testng.version>7.5</dep.testng.version>
-        <dep.lucene.version>8.10.0</dep.lucene.version>
+        <dep.lucene.version>8.11.3</dep.lucene.version>
         <dep.assertj-core.version>3.8.0</dep.assertj-core.version>
         <dep.logback.version>1.2.13</dep.logback.version>
         <dep.parquet.version>1.13.1</dep.parquet.version>
@@ -66,14 +66,14 @@
         <dep.asm.version>9.7.1</dep.asm.version>
         <dep.gcs.version>1.9.17</dep.gcs.version>
         <dep.alluxio.version>313</dep.alluxio.version>
-        <dep.slf4j.version>1.7.32</dep.slf4j.version>
+        <dep.slf4j.version>1.7.36</dep.slf4j.version>
         <dep.kafka.version>3.9.0</dep.kafka.version>
         <dep.pinot.version>0.11.0</dep.pinot.version>
         <dep.druid.version>30.0.1</dep.druid.version>
         <dep.jaxb.version>2.3.1</dep.jaxb.version>
         <dep.hudi.version>0.14.0</dep.hudi.version>
-        <dep.testcontainers.version>1.18.3</dep.testcontainers.version>
-        <dep.docker-java.version>3.3.0</dep.docker-java.version>
+        <dep.testcontainers.version>1.20.5</dep.testcontainers.version>
+        <dep.docker-java.version>3.4.1</dep.docker-java.version>
         <dep.jayway.version>2.9.0</dep.jayway.version>
         <dep.ratis.version>3.1.3</dep.ratis.version>
         <dep.errorprone.version>2.36.0</dep.errorprone.version>
@@ -82,8 +82,8 @@
         <dep.j2objc.version>3.0.0</dep.j2objc.version>
         <dep.avro.version>1.11.4</dep.avro.version>
         <dep.commons.compress.version>1.26.2</dep.commons.compress.version>
-        <dep.protobuf-java.version>3.25.5</dep.protobuf-java.version>
-        <dep.netty.version>4.1.118.Final</dep.netty.version>
+        <dep.protobuf-java.version>4.29.0</dep.protobuf-java.version>
+        <dep.netty.version>4.1.119.Final</dep.netty.version>
         <dep.snakeyaml.version>2.0</dep.snakeyaml.version>
         <dep.jetty.version>9.4.56.v20240826</dep.jetty.version>
         <dep.gson.version>2.12.1</dep.gson.version>
@@ -147,6 +147,7 @@
         <module>presto-bytecode</module>
         <module>presto-client</module>
         <module>presto-parser</module>
+        <module>presto-main-base</module>
         <module>presto-main</module>
         <module>presto-ml</module>
         <module>presto-geospatial-toolkit</module>
@@ -203,6 +204,7 @@
         <module>presto-test-coverage</module>
         <module>presto-hudi</module>
         <module>presto-native-execution</module>
+        <module>presto-native-tests</module>
         <module>presto-router</module>
         <module>presto-open-telemetry</module>
         <module>redis-hbo-provider</module>
@@ -216,17 +218,30 @@
 
     <dependencyManagement>
         <dependencies>
+
+            <dependency>
+                <groupId>commons-beanutils</groupId>
+                <artifactId>commons-beanutils</artifactId>
+                <version>1.9.4</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.codehaus.plexus</groupId>
+                <artifactId>plexus-utils</artifactId>
+                <version>3.6.0</version>
+            </dependency>
+
             <dependency>
                 <groupId>com.squareup.okio</groupId>
                 <artifactId>okio-jvm</artifactId>
-                <version>3.6.0</version>
+                <version>3.9.1</version>
             </dependency>
 
              <!-- pull up to the version used in okio-jvm to avoid conlict with okhttp-* -->
              <dependency>
                 <groupId>org.jetbrains.kotlin</groupId>
                 <artifactId>kotlin-stdlib-jdk8</artifactId>
-                <version>1.9.10</version>
+                <version>1.9.25</version>
              </dependency>
 
             <dependency>
@@ -775,6 +790,19 @@
 
             <dependency>
                 <groupId>com.facebook.presto</groupId>
+                <artifactId>presto-main-base</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.facebook.presto</groupId>
+                <artifactId>presto-main-base</artifactId>
+                <version>${project.version}</version>
+                <type>test-jar</type>
+            </dependency>
+
+            <dependency>
+                <groupId>com.facebook.presto</groupId>
                 <artifactId>presto-hive-metastore</artifactId>
                 <version>${project.version}</version>
             </dependency>
@@ -899,6 +927,12 @@
             <dependency>
                 <groupId>com.facebook.presto</groupId>
                 <artifactId>presto-spark-package</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.facebook.presto</groupId>
+                <artifactId>presto-base-arrow-flight</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -1039,6 +1073,12 @@
             <dependency>
                 <groupId>com.facebook.presto</groupId>
                 <artifactId>presto-function-namespace-managers</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.facebook.presto</groupId>
+                <artifactId>presto-function-namespace-managers-common</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -1385,9 +1425,9 @@
             </dependency>
 
             <dependency>
-                <groupId>mysql</groupId>
-                <artifactId>mysql-connector-java</artifactId>
-                <version>5.1.48</version>
+                <groupId>com.mysql</groupId>
+                <artifactId>mysql-connector-j</artifactId>
+                <version>9.2.0</version>
             </dependency>
 
             <dependency>
@@ -1424,7 +1464,7 @@
             <dependency>
                 <groupId>com.microsoft.sqlserver</groupId>
                 <artifactId>mssql-jdbc</artifactId>
-                <version>7.0.0.jre8</version>
+                <version>12.8.1.jre8</version>
             </dependency>
 
             <dependency>
@@ -1980,8 +2020,14 @@
 
             <dependency>
                 <groupId>com.facebook.presto</groupId>
-                <artifactId>testing-mysql-server-5</artifactId>
+                <artifactId>testing-mysql-server-8</artifactId>
                 <version>${dep.testing-mysql-server-5.version}</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>mysql</groupId>
+                        <artifactId>mysql-connector-java</artifactId>
+                    </exclusion>
+                </exclusions>
             </dependency>
 
             <dependency>
@@ -2165,7 +2211,7 @@
             <dependency>
                 <groupId>org.apache.zookeeper</groupId>
                 <artifactId>zookeeper</artifactId>
-                <version>3.4.14</version>
+                <version>3.9.3</version>
                 <exclusions>
                     <exclusion>
                         <artifactId>jline</artifactId>
@@ -2178,6 +2224,10 @@
                     <exclusion>
                         <groupId>org.slf4j</groupId>
                         <artifactId>slf4j-log4j12</artifactId>
+                    </exclusion>
+                    <exclusion>
+                        <groupId>commons-io</groupId>
+                        <artifactId>commons-io</artifactId>
                     </exclusion>
                 </exclusions>
             </dependency>

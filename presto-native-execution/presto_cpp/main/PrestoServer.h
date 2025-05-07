@@ -67,6 +67,7 @@ class Announcer;
 class SignalHandler;
 class TaskManager;
 class TaskResource;
+class PeriodicMemoryChecker;
 class PeriodicTaskManager;
 class SystemConfig;
 
@@ -115,15 +116,13 @@ class PrestoServer {
   void enableAnnouncer(bool enable);
 
  protected:
+  virtual void createPeriodicMemoryChecker();
+
   /// Hook for derived PrestoServer implementations to add/stop additional
   /// periodic tasks.
   virtual void addAdditionalPeriodicTasks(){};
 
   virtual void stopAdditionalPeriodicTasks(){};
-
-  virtual void addMemoryCheckerPeriodicTask();
-
-  virtual void stopMemoryCheckerPeriodicTask();
 
   virtual void initializeCoordinatorDiscoverer();
 
@@ -131,11 +130,7 @@ class PrestoServer {
 
   virtual std::shared_ptr<velox::exec::ExprSetListener> getExprSetListener();
 
-  /// Returns any additional http filters.
-  virtual std::vector<std::unique_ptr<proxygen::RequestHandlerFactory>>
-  getAdditionalHttpServerFilters();
-
-  virtual std::vector<std::string> registerConnectors(
+  virtual std::vector<std::string> registerVeloxConnectors(
       const fs::path& configDirectoryPath);
 
   /// Invoked to register the required dwio data sinks which are used by
@@ -145,8 +140,6 @@ class PrestoServer {
   virtual void registerFileReadersAndWriters();
 
   virtual void unregisterFileReadersAndWriters();
-
-  virtual void registerConnectorFactories();
 
   /// Invoked by presto shutdown procedure to unregister connectors.
   virtual void unregisterConnectors();
@@ -191,8 +184,8 @@ class PrestoServer {
   VeloxPlanValidator* getVeloxPlanValidator();
 
   /// Invoked to get the list of filters passed to the http server.
-  std::vector<std::unique_ptr<proxygen::RequestHandlerFactory>>
-  getHttpServerFilters();
+  virtual std::vector<std::unique_ptr<proxygen::RequestHandlerFactory>>
+  getHttpServerFilters() const;
 
   void initializeVeloxMemory();
 
@@ -227,6 +220,8 @@ class PrestoServer {
   void registerSidecarEndpoints();
 
   std::unique_ptr<velox::cache::SsdCache> setupSsdCache();
+
+  void checkOverload();
 
   const std::string configDirectoryPath_;
 
@@ -279,6 +274,9 @@ class PrestoServer {
   std::chrono::steady_clock::time_point start_;
   std::unique_ptr<PeriodicTaskManager> periodicTaskManager_;
   std::unique_ptr<PrestoServerOperations> prestoServerOperations_;
+  std::unique_ptr<PeriodicMemoryChecker> memoryChecker_;
+  bool isMemOverloaded_{false};
+  bool isCpuOverloaded_{false};
 
   // We update these members asynchronously and return in http requests w/o
   // delay.

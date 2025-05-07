@@ -153,7 +153,7 @@ public class SqlFunctionProperties
                 Objects.equals(sessionUser, that.sessionUser) &&
                 Objects.equals(extraCredentials, that.extraCredentials) &&
                 Objects.equals(legacyJsonCast, that.legacyJsonCast) &&
-                Objects.equals(canonicalizedJsonExtract, that.legacyJsonCast);
+                Objects.equals(canonicalizedJsonExtract, that.canonicalizedJsonExtract);
     }
 
     @Override

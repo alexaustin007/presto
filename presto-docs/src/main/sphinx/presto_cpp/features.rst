@@ -186,6 +186,8 @@ file from Linux cgroups V1 or V2. The LinuxMemoryChecker is used for Linux syste
 
 The LinuxMemoryChecker can be enabled by setting the CMake flag ``PRESTO_MEMORY_CHECKER_TYPE=LINUX_MEMORY_CHECKER``. 
 
+.. _async_data_caching_and_prefetching:
+
 Async Data Cache and Prefetching
 --------------------------------
 
@@ -250,4 +252,7 @@ Users can enable collection of worker level metrics by setting the property:
 * **Default value:** ``false``
 
   When true, the default behavior is a no-op. There is a prior setup that must be done before enabling this flag. To enable
-  metrics collection in Prometheus Data Format refer `here <https://github.com/prestodb/presto/tree/master/presto-native-execution#build-prestissimo>`_. 
+  metrics collection in Prometheus Data Format see `Worker Metrics Collection <https://github.com/prestodb/presto/tree/master/presto-native-execution#worker-metrics-collection>`_.
+
+  When enabled and Presto C++ workers interact with the S3 filesystem, additional runtime metrics are collected.
+  For a detailed list of these metrics, see `S3 FileSystem <https://facebookincubator.github.io/velox/monitoring/metrics.html#s3-filesystem>`_.

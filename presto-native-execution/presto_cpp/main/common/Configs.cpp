@@ -183,6 +183,8 @@ SystemConfig::SystemConfig() {
           NUM_PROP(kSystemMemShrinkGb, 8),
           BOOL_PROP(kMallocMemHeapDumpEnabled, false),
           BOOL_PROP(kSystemMemPushbackAbortEnabled, false),
+          NUM_PROP(kWorkerOverloadedThresholdMemGb, 0),
+          NUM_PROP(kWorkerOverloadedThresholdCpuPct, 0),
           NUM_PROP(kMallocHeapDumpThresholdGb, 20),
           NUM_PROP(kMallocMemMinHeapDumpInterval, 10),
           NUM_PROP(kMallocMemMaxHeapDumpFiles, 5),
@@ -207,6 +209,7 @@ SystemConfig::SystemConfig() {
           STR_PROP(kSharedArbitratorMemoryPoolReservedCapacity, "64MB"),
           STR_PROP(kSharedArbitratorMaxMemoryArbitrationTime, "5m"),
           STR_PROP(kSharedArbitratorGlobalArbitrationEnabled, "false"),
+          STR_PROP(kSharedArbitratorMemoryPoolAbortCapacityLimit, "8GB"),
           NUM_PROP(kLargestSizeClassPages, 256),
           BOOL_PROP(kEnableVeloxTaskLogging, false),
           BOOL_PROP(kEnableVeloxExprSetLogging, false),
@@ -217,7 +220,6 @@ SystemConfig::SystemConfig() {
           BOOL_PROP(kHttpEnableAccessLog, false),
           BOOL_PROP(kHttpEnableStatsFilter, false),
           BOOL_PROP(kHttpEnableEndpointLatencyFilter, false),
-          BOOL_PROP(kRegisterTestFunctions, false),
           NUM_PROP(kHttpMaxAllocateBytes, 65536),
           STR_PROP(kQueryMaxMemoryPerNode, "4GB"),
           BOOL_PROP(kEnableMemoryLeakCheck, true),
@@ -250,6 +252,11 @@ SystemConfig::SystemConfig() {
           BOOL_PROP(kPlanValidatorFailOnNestedLoopJoin, false),
           STR_PROP(kPrestoDefaultNamespacePrefix, "presto.default"),
           STR_PROP(kPoolType, "DEFAULT"),
+          BOOL_PROP(kSpillEnabled, false),
+          BOOL_PROP(kJoinSpillEnabled, true),
+          BOOL_PROP(kAggregationSpillEnabled, true),
+          BOOL_PROP(kOrderBySpillEnabled, true),
+          NUM_PROP(kRequestDataSizesMaxWaitSec, 10),
       };
 }
 
@@ -311,6 +318,26 @@ std::string SystemConfig::poolType() const {
       "{} must be one of 'LEAF', 'INTERMEDIATE', or 'DEFAULT'",
       kPoolType);
   return value;
+}
+
+bool SystemConfig::spillEnabled() const {
+  return optionalProperty<bool>(kSpillEnabled).value();
+}
+
+bool SystemConfig::joinSpillEnabled() const {
+  return optionalProperty<bool>(kJoinSpillEnabled).value();
+}
+
+bool SystemConfig::aggregationSpillEnabled() const {
+  return optionalProperty<bool>(kAggregationSpillEnabled).value();
+}
+
+bool SystemConfig::orderBySpillEnabled() const {
+  return optionalProperty<bool>(kOrderBySpillEnabled).value();
+}
+
+int SystemConfig::requestDataSizesMaxWaitSec() const {
+  return optionalProperty<int>(kRequestDataSizesMaxWaitSec).value();
 }
 
 bool SystemConfig::mutableConfig() const {
@@ -472,6 +499,14 @@ bool SystemConfig::systemMemPushbackEnabled() const {
 
 bool SystemConfig::systemMemPushBackAbortEnabled() const {
   return optionalProperty<bool>(kSystemMemPushbackAbortEnabled).value();
+}
+
+uint64_t SystemConfig::workerOverloadedThresholdMemGb() const {
+  return optionalProperty<uint64_t>(kWorkerOverloadedThresholdMemGb).value();
+}
+
+uint32_t SystemConfig::workerOverloadedThresholdCpuPct() const {
+  return optionalProperty<uint32_t>(kWorkerOverloadedThresholdCpuPct).value();
 }
 
 bool SystemConfig::mallocMemHeapDumpEnabled() const {
@@ -710,10 +745,6 @@ bool SystemConfig::enableHttpStatsFilter() const {
 
 bool SystemConfig::enableHttpEndpointLatencyFilter() const {
   return optionalProperty<bool>(kHttpEnableEndpointLatencyFilter).value();
-}
-
-bool SystemConfig::registerTestFunctions() const {
-  return optionalProperty<bool>(kRegisterTestFunctions).value();
 }
 
 uint64_t SystemConfig::httpMaxAllocateBytes() const {

@@ -73,10 +73,10 @@ std::string mapScalarFunction(const std::string& name) {
       {"presto.default.$operator$subscript",
        util::addDefaultNamespacePrefix(
            prestoDefaultNamespacePrefix, "subscript")},
-      {"presto.default.$operator$xx_hash_64", 
+      {"presto.default.$operator$xx_hash_64",
        util::addDefaultNamespacePrefix(
            prestoDefaultNamespacePrefix, "xxhash64_internal")},
-      {"presto.default.combine_hash", 
+      {"presto.default.combine_hash",
        util::addDefaultNamespacePrefix(
            prestoDefaultNamespacePrefix, "combine_hash_internal")},
       // Special form function overrides.
@@ -202,7 +202,7 @@ std::optional<TypedExprPtr> convertCastToVarcharWithMaxLength(
   static const std::string prestoDefaultNamespacePrefix =
       SystemConfig::instance()->prestoDefaultNamespacePrefix();
   if (nullOnFailure) {
-    VELOX_NYI("TRY_CAST of varchar to {} is not supported.", returnType);
+    VELOX_UNSUPPORTED("TRY_CAST of varchar to {} is not supported.", returnType);
   }
 
   // Parse the max length from the return type string in the format of
