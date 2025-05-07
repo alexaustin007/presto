@@ -48,7 +48,7 @@ Key Concepts
 ------------
 - Stores metadata about tables, columns, partitions, and storage locations
 - Enables schema-on-read functionality
-- Supports multiple metastore backends (MySQL, PostgreSQL, AWS Glue)
+- Supports multiple metastore backends (Apache Hive Metastore Service, AWS Glue)
 
 
 Additional Resources for Metastore Configuration
@@ -58,6 +58,8 @@ Additional Resources for Metastore Configuration
 * `How to invalidate metastore cache?`_
 * :ref:`installation/deployment:File-Based Metastore`
 * :doc:`/connector/hive-security`
+* `AWS Glue Catalog Configuration Properties`_
+
 
 Configuration
 -------------
